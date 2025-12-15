@@ -63,7 +63,7 @@ gh pr create --base develop \
 ### 2단계: PR 머지 → 자동 Changeset 생성
 
 ```yaml
-# .github/workflows/auto-changeset.yml이 자동 실행
+# .github/workflows/develop-changeset-automation.yml이 자동 실행
 
 1. PR이 develop에 머지됨
 2. Conventional Commit 분석:
@@ -110,7 +110,7 @@ git push origin release/v1.0.0
 ### 4단계: 자동 버전 업데이트 & PR 생성
 
 ```yaml
-# .github/workflows/release-branch.yml이 자동 실행
+# .github/workflows/release-version-update.yml이 자동 실행
 
 1. pnpm changeset version 실행
    - 모든 changeset 소비
@@ -136,7 +136,7 @@ web: 0.0.7 → 0.0.8
 
 ```yaml
 # PR이 자동으로 main에 머지됨 (auto-merge)
-# .github/workflows/release.yml이 자동 실행
+# .github/workflows/main-release-tagging.yml이 자동 실행
 
 1. Main 브랜치에 머지 감지
 2. 각 패키지의 버전 읽기
@@ -161,7 +161,7 @@ git push origin develop
 
 ## 자동화 구성요소
 
-### 1. auto-changeset.yml
+### 1. develop-changeset-automation.yml
 
 **트리거**: Feature PR이 develop에 머지될 때
 
@@ -200,7 +200,7 @@ git push origin develop
 
 **중요**: 기존 changeset이 있으면 스킵 (중복 방지)
 
-### 2. release-branch.yml
+### 2. release-version-update.yml
 
 **트리거**: release/* 브랜치가 push될 때
 
@@ -232,7 +232,7 @@ git push origin develop
    gh pr merge --auto --squash
    ```
 
-### 3. release.yml
+### 3. main-release-tagging.yml
 
 **트리거**: Main 브랜치에 push될 때
 
@@ -260,6 +260,32 @@ git push origin develop
      --title "@repo/hooks@1.0.0" \
      --notes "$(extract from CHANGELOG)"
    ```
+
+### 4. hotfix-automation.yml
+
+**트리거**: hotfix/* 브랜치 PR이 main에 머지될 때
+
+**주요 기능**:
+1. 변경된 패키지 동적 감지
+2. Changeset 자동 생성
+3. 즉시 버전 업데이트 & 릴리즈
+   ```bash
+   pnpm changeset version
+   pnpm build
+   git push origin main
+   ```
+4. Develop 브랜치로 자동 백포트
+   ```bash
+   git checkout develop
+   git merge origin/main
+   git push origin develop
+   ```
+
+**특징**:
+- 일반 릴리즈 프로세스 우회 (긴급 상황용)
+- PR 머지 즉시 프로덕션 릴리즈
+- 자동 백포트로 develop 동기화 유지
+- 백포트 충돌 시 워크플로우 실패 (수동 해결 필요)
 
 ---
 
@@ -490,7 +516,7 @@ ls .changeset/*.md | grep auto
 4. **워크플로우가 실행되지 않음**
    ```bash
    # 워크플로우 실행 이력 확인
-   gh run list --workflow=auto-changeset.yml --limit 5
+   gh run list --workflow=develop-changeset-automation.yml --limit 5
    ```
    → 해결: Repository Settings → Actions 권한 확인
 
@@ -556,9 +582,9 @@ gh pr list --head release/v1.0.0
 
 **원인 및 해결**:
 
-1. **release.yml 실행 확인**
+1. **main-release-tagging.yml 실행 확인**
    ```bash
-   gh run list --workflow=release.yml --limit 5
+   gh run list --workflow=main-release-tagging.yml --limit 5
    ```
 
 2. **로그 확인**
@@ -624,8 +650,8 @@ gh run list --limit 10
 
 # 특정 워크플로우만
 gh run list --workflow=auto-changeset.yml --limit 5
-gh run list --workflow=release-branch.yml --limit 5
-gh run list --workflow=release.yml --limit 5
+gh run list --workflow=release-version-update.yml --limit 5
+gh run list --workflow=main-release-tagging.yml --limit 5
 
 # 실행 중인 워크플로우 확인
 gh run list --status in_progress

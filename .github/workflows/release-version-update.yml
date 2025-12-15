@@ -1,4 +1,4 @@
-name: Release Branch Automation
+name: Release Version Update
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   version-and-pr:
-    name: Version Update and Create PR
+    name: Update Versions and Create PR
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -27,8 +27,21 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
 
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --prefer-offline
 
       - name: Check if version already updated
         id: check-version

@@ -1,4 +1,4 @@
-name: Auto Generate Changeset
+name: Develop Changeset Automation
 
 on:
   pull_request:
@@ -8,7 +8,7 @@ on:
 
 jobs:
   auto-changeset:
-    name: Auto Generate Changeset
+    name: Generate Changeset for Develop
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     permissions:
@@ -29,8 +29,21 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
 
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --prefer-offline
 
       - name: Check for existing changesets
         id: check-changesets
@@ -52,15 +65,14 @@ jobs:
 
           # Detect changed packages
           PACKAGES=""
-          if echo "$CHANGED_FILES" | grep -q "^packages/ui/"; then
-            PACKAGES="$PACKAGES @repo/ui"
-          fi
-          if echo "$CHANGED_FILES" | grep -q "^packages/hooks/"; then
-            PACKAGES="$PACKAGES @repo/hooks"
-          fi
-          if echo "$CHANGED_FILES" | grep -q "^apps/web/"; then
-            PACKAGES="$PACKAGES web"
-          fi
+          while IFS= read -r pkg; do
+            PKG_DIR=$(dirname "$pkg")
+            PKG_NAME=$(node -p "require('./$pkg').name")
+
+            if echo "$CHANGED_FILES" | grep -q "^$PKG_DIR/"; then
+              PACKAGES="$PACKAGES $PKG_NAME"
+            fi
+          done < <(find packages apps -name package.json) 
 
           echo "packages=$PACKAGES" >> $GITHUB_OUTPUT
           echo "Changed packages: $PACKAGES"

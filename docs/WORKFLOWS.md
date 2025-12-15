@@ -5,9 +5,10 @@
 ## 목차
 
 - [워크플로우 개요](#워크플로우-개요)
-- [auto-changeset.yml](#auto-changesetyml)
-- [release-branch.yml](#release-branchyml)
-- [release.yml](#releaseyml)
+- [develop-changeset-automation.yml](#develop-changeset-automationyml)
+- [release-version-update.yml](#release-version-updateyml)
+- [main-release-tagging.yml](#main-release-taggingyml)
+- [hotfix-automation.yml](#hotfix-automationyml)
 - [워크플로우 간 관계](#워크플로우-간-관계)
 - [커스터마이징 가이드](#커스터마이징-가이드)
 
@@ -20,29 +21,35 @@
 ```
 Feature PR → develop
     ↓
-auto-changeset.yml (Changeset 자동 생성)
+develop-changeset-automation.yml (Changeset 자동 생성)
     ↓
 release/vX.X.X 브랜치 생성
     ↓
-release-branch.yml (버전 업데이트 & PR 생성)
+release-version-update.yml (버전 업데이트 & PR 생성)
     ↓
 main PR 자동 머지
     ↓
-release.yml (Github Release 태그 생성)
+main-release-tagging.yml (Github Release 태그 생성)
+
+[긴급 상황]
+hotfix/* → main
+    ↓
+hotfix-automation.yml (즉시 릴리즈 & develop 백포트)
 ```
 
 ### 파일 위치
 
 ```
 .github/workflows/
-├── auto-changeset.yml      # Feature → Develop 자동화
-├── release-branch.yml      # Release 브랜치 자동화
-└── release.yml             # Main 배포 자동화
+├── develop-changeset-automation.yml    # Feature → Develop 자동화
+├── release-version-update.yml          # Release 브랜치 자동화
+├── main-release-tagging.yml            # Main 배포 자동화
+└── hotfix-automation.yml               # Hotfix 긴급 배포
 ```
 
 ---
 
-## auto-changeset.yml
+## develop-changeset-automation.yml
 
 ### 목적
 
@@ -286,7 +293,7 @@ env:
 
 ---
 
-## release-branch.yml
+## release-version-update.yml
 
 ### 목적
 
@@ -522,7 +529,7 @@ permissions:
 
 ---
 
-## release.yml
+## main-release-tagging.yml
 
 ### 목적
 
@@ -707,6 +714,117 @@ npm publish를 활성화하려면:
 
 ---
 
+## hotfix-automation.yml
+
+### 목적
+
+긴급 프로덕션 버그 수정을 위한 Hotfix 워크플로우입니다. `hotfix/*` 브랜치가 main에 머지되면:
+1. 자동으로 changeset 생성
+2. 즉시 버전 업데이트 및 릴리즈
+3. Develop 브랜치로 자동 백포트
+
+### 트리거
+
+```yaml
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+```
+
+**조건**:
+- PR이 **main 브랜치**에 머지되었을 때
+- 소스 브랜치가 **hotfix/**로 시작할 때
+
+### 워크플로우 단계
+
+#### 1. Changeset 생성
+
+```yaml
+- name: Generate changeset
+  run: |
+    CHANGESET_FILE=".changeset/hotfix-${CHANGESET_ID}.md"
+    echo "---" > $CHANGESET_FILE
+    for pkg in $PACKAGES; do
+      echo "\"$pkg\": $BUMP_TYPE" >> $CHANGESET_FILE
+    done
+    echo "---" >> $CHANGESET_FILE
+    echo "$PR_TITLE (#$PR_NUMBER)" >> $CHANGESET_FILE
+    echo "🚨 Hotfix from \`$HOTFIX_BRANCH\`" >> $CHANGESET_FILE
+```
+
+- 변경된 패키지를 동적으로 감지
+- Conventional Commits 기반 버전 범프 결정 (기본: patch)
+- Hotfix 표시 추가
+
+#### 2. 즉시 릴리즈
+
+```yaml
+- name: Create hotfix release immediately
+  run: |
+    pnpm changeset version
+    pnpm build
+    git commit -m "chore(hotfix): version packages for hotfix #$PR_NUMBER"
+    git push origin main
+```
+
+- Changeset 생성 직후 즉시 버전 업데이트
+- 빌드 실행 및 main에 Push
+- 일반 릴리즈 프로세스보다 훨씬 빠름
+
+#### 3. Develop 백포트
+
+```yaml
+- name: Backport to develop
+  run: |
+    git fetch origin develop
+    git checkout develop
+    git merge origin/main -m "chore: backport hotfix #$PR_NUMBER from main"
+    git push origin develop
+```
+
+- Hotfix 변경사항을 develop에 자동으로 백포트
+- Merge conflict 발생 시 워크플로우 실패 (수동 해결 필요)
+
+### 권한 요구사항
+
+```yaml
+permissions:
+  contents: write      # Changeset 생성, 버전 업데이트, 백포트
+  pull-requests: write # (미래 확장용)
+```
+
+### 주의사항
+
+1. **Hotfix는 patch가 기본**: 긴급 수정은 일반적으로 patch 버전이지만, Conventional Commits으로 minor/major도 가능
+2. **백포트 충돌**: Develop과 main이 크게 달라진 경우 백포트 중 충돌 발생 가능
+3. **즉시 릴리즈**: PR 머지 즉시 프로덕션 릴리즈되므로 신중하게 사용
+4. **릴리즈 브랜치 우회**: 일반 Git Flow를 우회하므로 진짜 긴급 상황에만 사용
+
+### 사용 시나리오
+
+```bash
+# 1. Hotfix 브랜치 생성
+git checkout -b hotfix/fix-critical-bug main
+
+# 2. 버그 수정 (Conventional Commit 사용)
+git commit -m "fix(ui): resolve XSS vulnerability in input component"
+
+# 3. Main에 PR 생성 및 머지
+gh pr create --base main --head hotfix/fix-critical-bug
+gh pr merge --squash
+
+# 4. 워크플로우가 자동으로:
+#    - Changeset 생성
+#    - 버전 업데이트 (예: 1.2.3 → 1.2.4)
+#    - Main에 커밋 & Push
+#    - Github Release 태그 생성
+#    - Develop에 백포트
+```
+
+---
+
 ## 워크플로우 간 관계
 
 ### 데이터 흐름
@@ -714,13 +832,13 @@ npm publish를 활성화하려면:
 ```
 1. Feature PR 머지 (develop)
    ↓
-   [auto-changeset.yml]
+   [develop-changeset-automation.yml]
    ↓
    .changeset/auto-123.md 생성
    ↓
 2. Release 브랜치 push
    ↓
-   [release-branch.yml]
+   [release-version-update.yml]
    ↓
    pnpm changeset version 실행
    ↓
@@ -732,10 +850,17 @@ npm publish를 활성화하려면:
    ↓
 3. Main 머지
    ↓
-   [release.yml]
+   [main-release-tagging.yml]
    ↓
    Git 태그 생성
    Github Release 생성
+
+[긴급 상황]
+Hotfix PR 머지 (main)
+   ↓
+   [hotfix-automation.yml]
+   ↓
+   Changeset 생성 → 즉시 릴리즈 → develop 백포트
 ```
 
 ### 상태 전이
