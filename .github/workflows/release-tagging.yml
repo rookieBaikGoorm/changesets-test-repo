@@ -1,4 +1,4 @@
-name: Hotfix Automation
+name: Release Tagging
 
 on:
   push:
@@ -8,8 +8,8 @@ on:
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
 jobs:
-  hotfix-release:
-    name: Hotfix Release
+  tagging:
+    name: Create Tags & Releases
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -23,31 +23,43 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
 
-      - name: Check if hotfix branch merge
-        id: check-hotfix
+      - name: Check merge type
+        id: check-merge
         run: |
           COMMIT_MSG=$(git log -1 --pretty=%B)
 
-          if echo "$COMMIT_MSG" | grep -qE "Merge branch 'hotfix/"; then
-            echo "is_hotfix=true" >> $GITHUB_OUTPUT
-            echo "🚨 Hotfix 브랜치 병합 감지됨"
+          if echo "$COMMIT_MSG" | grep -qE "Merge branch '(release|hotfix)/"; then
+            echo "is_release_or_hotfix=true" >> $GITHUB_OUTPUT
 
-            HOTFIX_BRANCH=$(echo "$COMMIT_MSG" | grep -oE "hotfix/[^ ']*" | head -1)
-            echo "hotfix_branch=$HOTFIX_BRANCH" >> $GITHUB_OUTPUT
-            echo "Hotfix 브랜치: $HOTFIX_BRANCH"
+            if echo "$COMMIT_MSG" | grep -qE "Merge branch 'release/"; then
+              echo "merge_type=release" >> $GITHUB_OUTPUT
+              echo "🎯 Release 브랜치 병합 감지됨"
+            elif echo "$COMMIT_MSG" | grep -qE "Merge branch 'hotfix/"; then
+              echo "merge_type=hotfix" >> $GITHUB_OUTPUT
+              echo "🚨 Hotfix 브랜치 병합 감지됨"
+            fi
           else
-            echo "is_hotfix=false" >> $GITHUB_OUTPUT
-            echo "ℹ️ Hotfix 병합이 아님, 스킵"
+            echo "is_release_or_hotfix=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ Release/Hotfix 병합이 아님, 스킵"
           fi
 
       - name: Create tags and GitHub Releases
-        if: steps.check-hotfix.outputs.is_hotfix == 'true'
+        if: steps.check-merge.outputs.is_release_or_hotfix == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "📦 Hotfix 태그 생성 중..."
+          MERGE_TYPE="${{ steps.check-merge.outputs.merge_type }}"
+
+          if [ "$MERGE_TYPE" = "hotfix" ]; then
+            echo "📦 Hotfix 태그 생성 중..."
+            TITLE_SUFFIX=" (Hotfix)"
+          else
+            echo "📦 Release 태그 생성 중..."
+            TITLE_SUFFIX=""
+          fi
+
           echo ""
           echo "ℹ️  버전 업데이트는 git-flow hook에서 이미 완료되었습니다"
           echo ""
@@ -66,31 +78,32 @@ jobs:
 
             # 태그가 이미 존재하는지 확인
             if ! git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
-              echo "📦 Hotfix 태그 생성: $TAG_NAME"
+              echo "📦 태그 생성: $TAG_NAME"
               git tag "$TAG_NAME"
               git push origin "$TAG_NAME"
 
               # Github Release 생성
               CHANGELOG_PATH="${pkg_json%package.json}CHANGELOG.md"
               if [ -f "$CHANGELOG_PATH" ]; then
+                # 해당 버전의 changelog 추출
                 RELEASE_NOTES=$(awk "/## $PKG_VERSION/,/## [0-9]/" "$CHANGELOG_PATH" | sed '1d;$d')
 
                 if [ -n "$RELEASE_NOTES" ]; then
                   gh release create "$TAG_NAME" \
-                    --title "$TAG_NAME (Hotfix)" \
+                    --title "${TAG_NAME}${TITLE_SUFFIX}" \
                     --notes "$RELEASE_NOTES" || echo "⚠️ Release 생성 실패: $TAG_NAME"
                 else
                   gh release create "$TAG_NAME" \
-                    --title "$TAG_NAME (Hotfix)" \
-                    --notes "Hotfix Release $TAG_NAME" || echo "⚠️ Release 생성 실패: $TAG_NAME"
+                    --title "${TAG_NAME}${TITLE_SUFFIX}" \
+                    --notes "Release $TAG_NAME" || echo "⚠️ Release 생성 실패: $TAG_NAME"
                 fi
               else
                 gh release create "$TAG_NAME" \
-                  --title "$TAG_NAME (Hotfix)" \
-                  --notes "Hotfix Release $TAG_NAME" || echo "⚠️ Release 생성 실패: $TAG_NAME"
+                  --title "${TAG_NAME}${TITLE_SUFFIX}" \
+                  --notes "Release $TAG_NAME" || echo "⚠️ Release 생성 실패: $TAG_NAME"
               fi
 
-              echo "✅ Hotfix 태그 및 릴리즈 생성 완료: $TAG_NAME"
+              echo "✅ 태그 및 릴리즈 생성 완료: $TAG_NAME"
               echo ""
             else
               echo "✅ 태그 $TAG_NAME 이미 존재함, 스킵"
@@ -98,4 +111,4 @@ jobs:
             fi
           done
 
-          echo "✅ Hotfix 릴리즈 배포 완료"
+          echo "✅ 모든 릴리즈 배포 완료"
