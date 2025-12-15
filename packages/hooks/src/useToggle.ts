@@ -5,6 +5,7 @@ export interface UseToggleReturn {
   toggle: () => void;
   setTrue: () => void;
   setFalse: () => void;
+  reset: () => void;
 }
 
 export function useToggle(initialValue = false): UseToggleReturn {
@@ -22,10 +23,15 @@ export function useToggle(initialValue = false): UseToggleReturn {
     setValue(false);
   }, []);
 
+  const reset = useCallback(() => {
+    setValue(initialValue);
+  }, [initialValue]);
+
   return {
     value,
     toggle,
     setTrue,
     setFalse,
+    reset,
   };
 }
