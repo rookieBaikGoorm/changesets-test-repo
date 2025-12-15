@@ -73,17 +73,85 @@ jobs:
             VERSION="${{ github.ref_name }}"
             VERSION="${VERSION#release/}"
 
-            # Create PR
-            PR_URL=$(gh pr create \
+            # Generate detailed PR body
+            echo "## 📦 버전 변경 사항" > pr_body.md
+            echo "" >> pr_body.md
+
+            # Extract version changes
+            HAS_CHANGES=false
+            for pkg_json in packages/*/package.json apps/*/package.json; do
+              if [ -f "$pkg_json" ]; then
+                PKG_NAME=$(node -p "require('./$pkg_json').name" 2>/dev/null || echo "")
+                if [ -z "$PKG_NAME" ]; then continue; fi
+
+                NEW_VERSION=$(node -p "require('./$pkg_json').version" 2>/dev/null || echo "")
+                OLD_VERSION=$(git show HEAD~1:$pkg_json 2>/dev/null | node -p "try { JSON.parse(require('fs').readFileSync(0, 'utf-8')).version } catch(e) { '' }" || echo "")
+
+                if [ -n "$NEW_VERSION" ] && [ "$OLD_VERSION" != "$NEW_VERSION" ]; then
+                  if [ -n "$OLD_VERSION" ]; then
+                    echo "- **$PKG_NAME**: \`$OLD_VERSION\` → \`$NEW_VERSION\`" >> pr_body.md
+                  else
+                    echo "- **$PKG_NAME**: \`$NEW_VERSION\` (신규)" >> pr_body.md
+                  fi
+                  HAS_CHANGES=true
+                fi
+              fi
+            done
+
+            if [ "$HAS_CHANGES" = false ]; then
+              echo "변경 사항 없음" >> pr_body.md
+            fi
+
+            echo "" >> pr_body.md
+            echo "## 📝 포함된 변경사항" >> pr_body.md
+            echo "" >> pr_body.md
+
+            # Extract changes from CHANGELOG
+            FOUND_CHANGES=false
+            for changelog in packages/*/CHANGELOG.md apps/*/CHANGELOG.md; do
+              if [ -f "$changelog" ]; then
+                PKG_DIR=$(dirname "$changelog")
+                PKG_NAME=$(node -p "require('./$PKG_DIR/package.json').name" 2>/dev/null || echo "")
+                if [ -z "$PKG_NAME" ]; then continue; fi
+
+                PKG_VERSION=$(node -p "require('./$PKG_DIR/package.json').version" 2>/dev/null || echo "")
+
+                # Extract latest version section from CHANGELOG
+                CHANGES=$(awk "/^## $PKG_VERSION/{flag=1; next} /^## [0-9]/{flag=0} flag" "$changelog" | grep -v "^$" | head -20)
+
+                if [ -n "$CHANGES" ]; then
+                  echo "### $PKG_NAME" >> pr_body.md
+                  echo "" >> pr_body.md
+                  echo "$CHANGES" >> pr_body.md
+                  echo "" >> pr_body.md
+                  FOUND_CHANGES=true
+                fi
+              fi
+            done
+
+            if [ "$FOUND_CHANGES" = false ]; then
+              echo "상세 변경 내역은 각 패키지의 CHANGELOG.md를 참조하세요." >> pr_body.md
+              echo "" >> pr_body.md
+            fi
+
+            echo "---" >> pr_body.md
+            echo "" >> pr_body.md
+            echo "**병합 후 자동 처리:**" >> pr_body.md
+            echo "- ✅ Github Release 태그 자동 생성" >> pr_body.md
+            echo "- ✅ CHANGELOG 파일 업데이트 완료" >> pr_body.md
+            echo "- ⚠️  \`develop\` 브랜치로 백포트 필요" >> pr_body.md
+
+            # Create PR with detailed body
+            gh pr create \
               --base main \
               --head ${{ github.ref_name }} \
               --title "chore(release): ${VERSION}" \
-              --body "Release ${VERSION} - Version updates from changesets. Github Release tags will be created after merge.")
+              --body-file pr_body.md
 
-            echo "✅ PR created: $PR_URL"
+            echo "✅ PR created with detailed changelog"
 
             # Enable auto-merge
-            PR_NUMBER=$(echo "$PR_URL" | grep -o '[0-9]\+$')
+            PR_NUMBER=$(gh pr list --head ${{ github.ref_name }} --json number --jq '.[0].number')
             gh pr merge $PR_NUMBER --auto --squash
             echo "✅ Auto-merge enabled for PR #$PR_NUMBER"
           else
