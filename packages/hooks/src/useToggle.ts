@@ -5,26 +5,31 @@ export interface UseToggleReturn {
   toggle: () => void;
   setTrue: () => void;
   setFalse: () => void;
+  setValue: (value: boolean) => void;
   reset: () => void;
 }
 
 export function useToggle(initialValue = false): UseToggleReturn {
-  const [value, setValue] = useState(initialValue);
+  const [value, setInternalValue] = useState(initialValue);
 
   const toggle = useCallback(() => {
-    setValue((prev) => !prev);
+    setInternalValue((prev) => !prev);
   }, []);
 
   const setTrue = useCallback(() => {
-    setValue(true);
+    setInternalValue(true);
   }, []);
 
   const setFalse = useCallback(() => {
-    setValue(false);
+    setInternalValue(false);
+  }, []);
+
+  const setValue = useCallback((newValue: boolean) => {
+    setInternalValue(newValue);
   }, []);
 
   const reset = useCallback(() => {
-    setValue(initialValue);
+    setInternalValue(initialValue);
   }, [initialValue]);
 
   return {
@@ -32,6 +37,7 @@ export function useToggle(initialValue = false): UseToggleReturn {
     toggle,
     setTrue,
     setFalse,
+    setValue,
     reset,
   };
 }
