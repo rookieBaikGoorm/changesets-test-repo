@@ -173,12 +173,17 @@ git push origin develop
    feat! / BREAKING CHANGE: → major
    ```
 
-2. 변경된 패키지 감지
+2. 변경된 패키지 감지 (동적 탐색)
    ```javascript
+   // find로 모든 package.json 자동 탐색
    packages/hooks/ → @repo/hooks
    packages/ui/ → @repo/ui
+   packages/utils/ → @repo/utils (새 패키지도 자동!)
    apps/web/ → web
+   apps/admin/ → admin (새 앱도 자동!)
    ```
+
+   **✨ 새 패키지 추가 시 워크플로우 수정 불필요!**
 
 3. Changeset 파일 생성
    ```markdown

@@ -120,32 +120,45 @@ on:
     # Get list of changed files in the PR
     CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
 
-    # Detect changed packages
+    # Detect changed packages (동적 탐색)
     PACKAGES=""
-    if echo "$CHANGED_FILES" | grep -q "^packages/ui/"; then
-      PACKAGES="$PACKAGES @repo/ui"
-    fi
-    if echo "$CHANGED_FILES" | grep -q "^packages/hooks/"; then
-      PACKAGES="$PACKAGES @repo/hooks"
-    fi
-    if echo "$CHANGED_FILES" | grep -q "^apps/web/"; then
-      PACKAGES="$PACKAGES web"
-    fi
+    while IFS= read -r pkg; do
+      PKG_DIR=$(dirname "$pkg")
+      PKG_NAME=$(node -p "require('./$pkg').name")
+
+      if echo "$CHANGED_FILES" | grep -q "^$PKG_DIR/"; then
+        PACKAGES="$PACKAGES $PKG_NAME"
+      fi
+    done < <(find packages apps -name package.json)
 
     echo "packages=$PACKAGES" >> $GITHUB_OUTPUT
     echo "Changed packages: $PACKAGES"
 ```
 
-**감지 대상**:
-- `packages/ui/` → `@repo/ui`
-- `packages/hooks/` → `@repo/hooks`
-- `apps/web/` → `web`
+**동작 방식**:
+1. `find packages apps -name package.json`
+   - `packages/` 와 `apps/` 하위의 모든 `package.json` 파일 찾기
+   - 재귀적으로 탐색
 
-**새 패키지 추가 방법**:
-```yaml
-if echo "$CHANGED_FILES" | grep -q "^packages/utils/"; then
-  PACKAGES="$PACKAGES @repo/utils"
-fi
+2. 각 `package.json`에 대해:
+   - 디렉토리 경로 추출: `PKG_DIR=$(dirname "$pkg")`
+   - 패키지명 읽기: `PKG_NAME=$(node -p "require('./$pkg').name")`
+   - 변경 파일에 해당 디렉토리가 포함되어 있으면 추가
+
+**장점**:
+- ✅ 새 패키지 추가 시 워크플로우 수정 불필요
+- ✅ 자동으로 모든 패키지 감지
+- ✅ 확장성 우수
+
+**예시**:
+```
+packages/
+  ui/package.json → "@repo/ui"
+  hooks/package.json → "@repo/hooks"
+  utils/package.json → "@repo/utils" (새 패키지도 자동 감지!)
+apps/
+  web/package.json → "web"
+  admin/package.json → "admin" (새 앱도 자동 감지!)
 ```
 
 #### 5. Conventional Commits 분석
@@ -711,17 +724,28 @@ release.yml
 
 ### 새 패키지 추가
 
-**auto-changeset.yml 수정**:
+**✅ 워크플로우 수정 불필요!**
 
-```yaml
-# Detect changed packages 섹션에 추가
-if echo "$CHANGED_FILES" | grep -q "^packages/new-package/"; then
-  PACKAGES="$PACKAGES @repo/new-package"
-fi
+동적 패키지 탐색 덕분에 새 패키지를 추가해도 워크플로우를 수정할 필요가 없습니다:
+
+```bash
+# 1. 새 패키지 생성
+mkdir -p packages/utils
+cat > packages/utils/package.json << 'EOF'
+{
+  "name": "@repo/utils",
+  "version": "0.1.0"
+}
+EOF
+
+# 2. 끝! 자동으로 감지됩니다 ✨
 ```
 
-**release.yml은 자동 감지** (수정 불필요):
-- `packages/*/package.json` 패턴으로 자동 탐색
+**자동 감지 로직**:
+- `auto-changeset.yml`: `find packages apps -name package.json`으로 자동 탐색
+- `release.yml`: `packages/*/package.json` 패턴으로 자동 탐색
+
+둘 다 수정 불필요!
 
 ### 버전 규칙 변경
 
