@@ -5,6 +5,8 @@ export interface UseCounterReturn {
   increment: () => void;
   decrement: () => void;
   reset: () => void;
+  incrementBy: (amount: number) => void;
+  decrementBy: (amount: number) => void;
 }
 
 export function useCounter(initialValue = 0): UseCounterReturn {
@@ -22,10 +24,20 @@ export function useCounter(initialValue = 0): UseCounterReturn {
     setCount(initialValue);
   }, [initialValue]);
 
+  const incrementBy = useCallback((amount: number) => {
+    setCount((prev) => prev + amount);
+  }, []);
+
+  const decrementBy = useCallback((amount: number) => {
+    setCount((prev) => prev - amount);
+  }, []);
+
   return {
     count,
     increment,
     decrement,
     reset,
+    incrementBy,
+    decrementBy,
   };
 }
