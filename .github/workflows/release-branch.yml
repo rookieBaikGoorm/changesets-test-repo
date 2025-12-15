@@ -73,13 +73,19 @@ jobs:
             VERSION="${{ github.ref_name }}"
             VERSION="${VERSION#release/}"
 
-            gh pr create \
+            # Create PR
+            PR_URL=$(gh pr create \
               --base main \
               --head ${{ github.ref_name }} \
               --title "chore(release): ${VERSION}" \
-              --body "Release ${VERSION} - Version updates from changesets. Github Release tags will be created after merge."
+              --body "Release ${VERSION} - Version updates from changesets. Github Release tags will be created after merge.")
 
-            echo "✅ PR created successfully"
+            echo "✅ PR created: $PR_URL"
+
+            # Enable auto-merge
+            PR_NUMBER=$(echo "$PR_URL" | grep -o '[0-9]\+$')
+            gh pr merge $PR_NUMBER --auto --squash
+            echo "✅ Auto-merge enabled for PR #$PR_NUMBER"
           else
             echo "✅ PR already exists: #$EXISTING_PR"
           fi

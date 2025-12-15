@@ -32,10 +32,47 @@ jobs:
       - name: Build packages
         run: pnpm build
 
-      - name: Create Github Release Tags
-        id: changesets
-        uses: changesets/action@v1
-        with:
-          createGithubReleases: true
+      - name: Check for version changes and create tags
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Check if this is a release merge (contains version updates)
+          if git log -1 --pretty=%B | grep -q "chore(release):"; then
+            echo "🎯 Release merge detected, creating tags..."
+
+            # Find all package.json files and create tags
+            for pkg_json in packages/*/package.json apps/*/package.json; do
+              if [ -f "$pkg_json" ]; then
+                PKG_NAME=$(node -p "require('./$pkg_json').name")
+                PKG_VERSION=$(node -p "require('./$pkg_json').version")
+                TAG_NAME="${PKG_NAME}@${PKG_VERSION}"
+
+                # Check if tag already exists
+                if ! git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+                  echo "📦 Creating tag: $TAG_NAME"
+                  git tag "$TAG_NAME"
+                  git push origin "$TAG_NAME"
+
+                  # Create Github Release
+                  CHANGELOG_PATH="${pkg_json%package.json}CHANGELOG.md"
+                  if [ -f "$CHANGELOG_PATH" ]; then
+                    # Extract changelog for this version
+                    RELEASE_NOTES=$(awk "/## $PKG_VERSION/,/## [0-9]/" "$CHANGELOG_PATH" | sed '1d;$d')
+                    gh release create "$TAG_NAME" \
+                      --title "$TAG_NAME" \
+                      --notes "$RELEASE_NOTES" || echo "⚠️ Failed to create release for $TAG_NAME"
+                  else
+                    gh release create "$TAG_NAME" \
+                      --title "$TAG_NAME" \
+                      --notes "Release $TAG_NAME" || echo "⚠️ Failed to create release for $TAG_NAME"
+                  fi
+
+                  echo "✅ Tag and release created for $TAG_NAME"
+                else
+                  echo "✅ Tag $TAG_NAME already exists, skipping"
+                fi
+              fi
+            done
+          else
+            echo "ℹ️ Not a release merge, skipping tag creation"
+          fi
