@@ -4,7 +4,7 @@ on:
   pull_request:
     types: [closed]
     branches:
-      - main
+      - develop
 
 jobs:
   auto-changeset:
@@ -115,4 +115,4 @@ jobs:
 
           git add .changeset/
           git commit -m "chore: auto-generate changeset for PR #${{ github.event.pull_request.number }}"
-          git push origin main
+          git push origin develop
