@@ -1,0 +1,120 @@
+name: Auto Generate Changeset
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+jobs:
+  auto-changeset:
+    name: Auto Generate Changeset
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check for existing changesets
+        id: check-changesets
+        run: |
+          if [ -n "$(ls .changeset/*.md 2>/dev/null | grep -v README.md)" ]; then
+            echo "has_changeset=true" >> $GITHUB_OUTPUT
+            echo "✅ Changeset already exists"
+          else
+            echo "has_changeset=false" >> $GITHUB_OUTPUT
+            echo "⚠️ No changeset found, will auto-generate"
+          fi
+
+      - name: Detect changed packages
+        if: steps.check-changesets.outputs.has_changeset == 'false'
+        id: detect-packages
+        run: |
+          # Get list of changed files in the PR
+          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
+
+          # Detect changed packages
+          PACKAGES=""
+          if echo "$CHANGED_FILES" | grep -q "^packages/ui/"; then
+            PACKAGES="$PACKAGES @repo/ui"
+          fi
+          if echo "$CHANGED_FILES" | grep -q "^packages/hooks/"; then
+            PACKAGES="$PACKAGES @repo/hooks"
+          fi
+          if echo "$CHANGED_FILES" | grep -q "^apps/web/"; then
+            PACKAGES="$PACKAGES web"
+          fi
+
+          echo "packages=$PACKAGES" >> $GITHUB_OUTPUT
+          echo "Changed packages: $PACKAGES"
+
+      - name: Analyze commits and determine version bump
+        if: steps.check-changesets.outputs.has_changeset == 'false'
+        id: analyze-commits
+        run: |
+          # Get commit messages from the PR
+          COMMITS=$(git log --format=%s HEAD~1..HEAD)
+
+          # Determine version bump type based on conventional commits
+          BUMP_TYPE="patch"
+          if echo "$COMMITS" | grep -qiE "^(feat|feature)(\(.+\))?!?:"; then
+            BUMP_TYPE="minor"
+          fi
+          if echo "$COMMITS" | grep -qiE "^(BREAKING CHANGE|.*!:)"; then
+            BUMP_TYPE="major"
+          fi
+
+          echo "bump_type=$BUMP_TYPE" >> $GITHUB_OUTPUT
+          echo "Version bump type: $BUMP_TYPE"
+
+      - name: Generate changeset
+        if: steps.check-changesets.outputs.has_changeset == 'false' && steps.detect-packages.outputs.packages != ''
+        run: |
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          BUMP_TYPE="${{ steps.analyze-commits.outputs.bump_type }}"
+          PACKAGES="${{ steps.detect-packages.outputs.packages }}"
+
+          # Create changeset file
+          CHANGESET_ID=$(date +%s)
+          CHANGESET_FILE=".changeset/auto-${CHANGESET_ID}.md"
+
+          # Write changeset
+          echo "---" > $CHANGESET_FILE
+          for pkg in $PACKAGES; do
+            echo "\"$pkg\": $BUMP_TYPE" >> $CHANGESET_FILE
+          done
+          echo "---" >> $CHANGESET_FILE
+          echo "" >> $CHANGESET_FILE
+          echo "$PR_TITLE (#$PR_NUMBER)" >> $CHANGESET_FILE
+
+          cat $CHANGESET_FILE
+
+      - name: Commit and push changeset
+        if: steps.check-changesets.outputs.has_changeset == 'false' && steps.detect-packages.outputs.packages != ''
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add .changeset/
+          git commit -m "chore: auto-generate changeset for PR #${{ github.event.pull_request.number }}"
+          git push origin main

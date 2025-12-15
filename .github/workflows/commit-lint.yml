@@ -1,0 +1,54 @@
+name: Commit Lint
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  commitlint:
+    name: Validate Commit Messages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate commits
+        run: |
+          # Get commits from the PR
+          COMMITS=$(git log --format=%s origin/${{ github.base_ref }}..HEAD)
+
+          echo "📋 Checking commit messages..."
+          echo "$COMMITS"
+
+          # Check if at least one commit follows conventional commits
+          VALID=false
+          while IFS= read -r commit; do
+            if echo "$commit" | grep -qE "^(feat|fix|docs|style|refactor|perf|test|chore|build|ci)(\(.+\))?!?:"; then
+              VALID=true
+              echo "✅ Valid: $commit"
+            else
+              echo "⚠️  Non-conventional: $commit"
+            fi
+          done <<< "$COMMITS"
+
+          if [ "$VALID" = false ]; then
+            echo ""
+            echo "❌ No conventional commits found!"
+            echo ""
+            echo "Please use conventional commit format:"
+            echo "  feat: add new feature"
+            echo "  fix: fix a bug"
+            echo "  docs: update documentation"
+            echo "  chore: update build process"
+            echo ""
+            echo "Version bumps:"
+            echo "  feat: → minor (0.X.0)"
+            echo "  fix: → patch (0.0.X)"
+            echo "  BREAKING CHANGE: → major (X.0.0)"
+            exit 1
+          fi
+
+          echo ""
+          echo "✅ Commit messages validated successfully"
