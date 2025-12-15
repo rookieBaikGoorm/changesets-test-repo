@@ -192,16 +192,17 @@ jobs:
 
           echo "✅ Hotfix 릴리즈 배포 완료"
 
-      - name: Backport to develop
+      - name: Sync version updates to develop
         if: steps.check-hotfix.outputs.is_hotfix == 'true' && steps.detect-packages.outputs.packages != ''
         run: |
-          echo "🔄 Develop 브랜치로 백포트 중..."
+          echo "🔄 Develop 브랜치에 버전 업데이트 반영 중..."
 
           git fetch origin develop
           git checkout develop
 
-          git merge origin/main -m "chore: backport hotfix from main"
+          # Main의 hotfix 버전 업데이트를 develop에 병합
+          git merge origin/main -m "chore(hotfix): version packages"
 
           git push origin develop
 
-          echo "✅ Hotfix가 develop으로 백포트됨"
+          echo "✅ Develop 브랜치에 hotfix 버전 업데이트 반영 완료"
