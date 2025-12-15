@@ -70,29 +70,14 @@ jobs:
           EXISTING_PR=$(gh pr list --base main --head ${{ github.ref_name }} --json number --jq '.[0].number')
 
           if [ -z "$EXISTING_PR" ]; then
-            # Extract version from branch name (release/v1.0.0 -> v1.0.0)
             VERSION="${{ github.ref_name }}"
             VERSION="${VERSION#release/}"
-
-            # Create PR body
-            PR_BODY="## Release ${VERSION}
-
-This PR contains version updates from the release branch.
-
-### Changes
-- Version numbers updated via changesets
-- CHANGELOG files updated
-- Ready for production release
-
-### Post-Merge Actions
-- Github Release tags will be automatically created
-- Merge this release branch back to develop to sync versions"
 
             gh pr create \
               --base main \
               --head ${{ github.ref_name }} \
               --title "chore(release): ${VERSION}" \
-              --body "$PR_BODY"
+              --body "Release ${VERSION} - Version updates from changesets. Github Release tags will be created after merge."
 
             echo "✅ PR created successfully"
           else
