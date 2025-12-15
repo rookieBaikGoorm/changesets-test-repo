@@ -7,6 +7,7 @@ export interface UseCounterReturn {
   reset: () => void;
   incrementBy: (amount: number) => void;
   decrementBy: (amount: number) => void;
+  setValue: (value: number) => void;
 }
 
 export function useCounter(initialValue = 0): UseCounterReturn {
@@ -32,6 +33,10 @@ export function useCounter(initialValue = 0): UseCounterReturn {
     setCount((prev) => prev - amount);
   }, []);
 
+  const setValue = useCallback((value: number) => {
+    setCount(value);
+  }, []);
+
   return {
     count,
     increment,
@@ -39,5 +44,6 @@ export function useCounter(initialValue = 0): UseCounterReturn {
     reset,
     incrementBy,
     decrementBy,
+    setValue,
   };
 }
