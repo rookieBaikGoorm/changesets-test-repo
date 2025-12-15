@@ -448,14 +448,11 @@ EOF
 pnpm install
 pnpm --filter @repo/utils build
 
-# 6. auto-changeset.yml 업데이트 (새 패키지 감지)
-# .github/workflows/auto-changeset.yml 파일 수정 필요
-
-# 7. 커밋
-git add packages/utils/ .github/workflows/auto-changeset.yml
+# 6. 커밋 (워크플로우 수정 불필요! 자동 감지됨 ✨)
+git add packages/utils/
 git commit -m "feat(utils): create new utils package"
 
-# 8. PR
+# 7. PR
 gh pr create --base develop
 ```
 
@@ -509,7 +506,7 @@ pnpm changeset
 git commit -m "feat(hooks): add new feature"
 ```
 
-단, 자동화가 작동하지 않는 경우(예: hotfix)에만 수동으로 생성하세요.
+**거의 항상 수동으로 생성할 필요가 없습니다.** Develop과 Hotfix 모두 자동화되어 있습니다.
 
 ### Q2: 여러 커밋을 하나의 PR로 만들면?
 
@@ -547,7 +544,7 @@ git commit -m "fix(hooks): fix bug C"
 
 3. **워크플로우 실행**:
    ```bash
-   gh run list --workflow=auto-changeset.yml --limit 5
+   gh run list --workflow=develop-changeset-automation.yml --limit 5
    ```
 
 4. **이미 존재하는 changeset**:
@@ -587,38 +584,43 @@ gh pr create --base develop
 ```bash
 # Release 담당자만 실행
 git checkout develop
-git checkout -b release/v1.0.0
-git push origin release/v1.0.0
+git flow release start v1.0.0
+git flow release finish -Fpn v1.0.0
 
-# 나머지는 자동! 🚀
+# Hook과 GitHub Actions가 모든 걸 자동으로 처리합니다! 🚀
 ```
 
 개발자는 Release를 만들 필요가 없습니다.
 
 ### Q7: Hotfix는 어떻게 하나요?
 
-**A**: 현재 자동화는 develop 기반이므로, hotfix는 수동 changeset이 필요합니다:
+**A**: Hotfix도 Git Flow를 사용하여 완전히 자동화되어 있습니다! 🚀
 
 ```bash
-# 1. Main에서 hotfix 브랜치
-git checkout main
-git checkout -b hotfix/critical-bug
+# 1. Hotfix 시작
+git flow hotfix start fix-critical-bug
 
-# 2. 버그 수정
+# 2. 버그 수정 (Conventional Commit 사용)
 git commit -m "fix(hooks): critical security issue"
 
-# 3. 수동 changeset 생성
-pnpm changeset
-# → @repo/hooks: patch
+# 3. Hotfix 완료
+git flow hotfix finish -Fpn fix-critical-bug
 
-# 4. Main PR
-gh pr create --base main
-
-# 5. 머지 후 develop 백포트
-git checkout develop
-git merge main
-git push origin develop
+# ✅ Git Flow Hook이 자동으로:
+#    - 변경된 패키지 감지
+#    - Changeset 생성
+#    - 버전 업데이트
+#    - main과 develop에 병합
+#
+# ✅ GitHub Actions가 자동으로:
+#    - Git 태그 생성
+#    - GitHub Release 생성
 ```
+
+**중요**:
+- Git Flow가 main과 develop을 자동으로 동기화합니다
+- 진짜 긴급 상황에만 사용하세요
+- Hook이 모든 버전 관리를 자동으로 처리합니다
 
 ### Q8: 여러 Feature를 동시에 개발 중인데, Release 타이밍은?
 

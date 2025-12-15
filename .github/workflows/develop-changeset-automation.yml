@@ -1,4 +1,4 @@
-name: Auto Generate Changeset
+name: Develop Changeset Automation
 
 on:
   pull_request:
@@ -8,7 +8,7 @@ on:
 
 jobs:
   auto-changeset:
-    name: Auto Generate Changeset
+    name: Generate Changeset for Develop
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     permissions:
@@ -29,50 +29,62 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
 
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --prefer-offline
 
       - name: Check for existing changesets
         id: check-changesets
         run: |
           if [ -n "$(ls .changeset/*.md 2>/dev/null | grep -v README.md)" ]; then
             echo "has_changeset=true" >> $GITHUB_OUTPUT
-            echo "✅ Changeset already exists"
+            echo "✅ Changeset이 이미 존재함"
           else
             echo "has_changeset=false" >> $GITHUB_OUTPUT
-            echo "⚠️ No changeset found, will auto-generate"
+            echo "⚠️ Changeset 없음, 자동 생성 예정"
           fi
 
       - name: Detect changed packages
         if: steps.check-changesets.outputs.has_changeset == 'false'
         id: detect-packages
         run: |
-          # Get list of changed files in the PR
+          # PR에서 변경된 파일 목록 가져오기
           CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
 
-          # Detect changed packages
+          # 변경된 패키지 감지
           PACKAGES=""
-          if echo "$CHANGED_FILES" | grep -q "^packages/ui/"; then
-            PACKAGES="$PACKAGES @repo/ui"
-          fi
-          if echo "$CHANGED_FILES" | grep -q "^packages/hooks/"; then
-            PACKAGES="$PACKAGES @repo/hooks"
-          fi
-          if echo "$CHANGED_FILES" | grep -q "^apps/web/"; then
-            PACKAGES="$PACKAGES web"
-          fi
+          while IFS= read -r pkg; do
+            PKG_DIR=$(dirname "$pkg")
+            PKG_NAME=$(node -p "require('./$pkg').name")
+
+            if echo "$CHANGED_FILES" | grep -q "^$PKG_DIR/"; then
+              PACKAGES="$PACKAGES $PKG_NAME"
+            fi
+          done < <(find packages apps -name package.json)
 
           echo "packages=$PACKAGES" >> $GITHUB_OUTPUT
-          echo "Changed packages: $PACKAGES"
+          echo "변경된 패키지: $PACKAGES"
 
       - name: Analyze commits and determine version bump
         if: steps.check-changesets.outputs.has_changeset == 'false'
         id: analyze-commits
         run: |
-          # Get commit messages from the PR
+          # PR의 커밋 메시지 가져오기
           COMMITS=$(git log --format=%s HEAD~1..HEAD)
 
-          # Determine version bump type based on conventional commits
+          # Conventional commits 기반 버전 범프 타입 결정
           BUMP_TYPE="patch"
           if echo "$COMMITS" | grep -qiE "^(feat|feature)(\(.+\))?!?:"; then
             BUMP_TYPE="minor"
@@ -82,7 +94,7 @@ jobs:
           fi
 
           echo "bump_type=$BUMP_TYPE" >> $GITHUB_OUTPUT
-          echo "Version bump type: $BUMP_TYPE"
+          echo "버전 범프 타입: $BUMP_TYPE"
 
       - name: Generate changeset
         if: steps.check-changesets.outputs.has_changeset == 'false' && steps.detect-packages.outputs.packages != ''
@@ -92,11 +104,11 @@ jobs:
           BUMP_TYPE="${{ steps.analyze-commits.outputs.bump_type }}"
           PACKAGES="${{ steps.detect-packages.outputs.packages }}"
 
-          # Create changeset file
+          # Changeset 파일 생성
           CHANGESET_ID=$(date +%s)
           CHANGESET_FILE=".changeset/auto-${CHANGESET_ID}.md"
 
-          # Write changeset
+          # Changeset 작성
           echo "---" > $CHANGESET_FILE
           for pkg in $PACKAGES; do
             echo "\"$pkg\": $BUMP_TYPE" >> $CHANGESET_FILE
@@ -106,6 +118,7 @@ jobs:
           echo "$PR_TITLE (#$PR_NUMBER)" >> $CHANGESET_FILE
 
           cat $CHANGESET_FILE
+          echo "✅ Changeset 생성 완료"
 
       - name: Commit and push changeset to develop
         if: steps.check-changesets.outputs.has_changeset == 'false' && steps.detect-packages.outputs.packages != ''

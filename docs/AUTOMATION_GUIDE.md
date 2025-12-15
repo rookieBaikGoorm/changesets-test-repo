@@ -63,7 +63,7 @@ gh pr create --base develop \
 ### 2단계: PR 머지 → 자동 Changeset 생성
 
 ```yaml
-# .github/workflows/auto-changeset.yml이 자동 실행
+# .github/workflows/develop-changeset-automation.yml이 자동 실행
 
 1. PR이 develop에 머지됨
 2. Conventional Commit 분석:
@@ -87,7 +87,7 @@ gh pr create --base develop \
 feat(hooks): add useDebounce hook (#15)
 ```
 
-### 3단계: Release 준비 (Release Manager)
+### 3단계: Release 준비 및 완료 (Release Manager)
 
 여러 Feature가 develop에 누적된 후:
 
@@ -100,29 +100,18 @@ git pull origin develop
 ls .changeset/*.md
 # auto-111.md, auto-222.md, auto-333.md
 
-# 3. Release 브랜치 생성 & Push
-git checkout -b release/v1.0.0
-git push origin release/v1.0.0
+# 3. Git Flow Release 시작
+git flow release start v1.0.0
 
-# 끝! 나머지는 자동 🚀
-```
+# 4. Git Flow Release 완료
+git flow release finish -Fpn v1.0.0
 
-### 4단계: 자동 버전 업데이트 & PR 생성
-
-```yaml
-# .github/workflows/release-branch.yml이 자동 실행
-
-1. pnpm changeset version 실행
-   - 모든 changeset 소비
-   - package.json 버전 업데이트
-   - CHANGELOG.md 생성/업데이트
-
-2. 변경사항 커밋:
-   "chore(release): version packages"
-
-3. Main으로 PR 자동 생성:
-   - 제목: "chore(release): v1.0.0"
-   - Auto-merge 자동 활성화
+# ✅ Git Flow Hook이 자동으로:
+#    - pnpm changeset version 실행
+#    - package.json 버전 업데이트
+#    - CHANGELOG.md 생성
+#    - 변경사항 커밋
+#    - main과 develop에 병합
 ```
 
 **업데이트 예시**:
@@ -132,13 +121,12 @@ git push origin release/v1.0.0
 web: 0.0.7 → 0.0.8
 ```
 
-### 5단계: 자동 배포
+### 4단계: 자동 태그 & Release 생성
 
 ```yaml
-# PR이 자동으로 main에 머지됨 (auto-merge)
-# .github/workflows/release.yml이 자동 실행
+# .github/workflows/release-tagging.yml이 자동 실행
 
-1. Main 브랜치에 머지 감지
+1. Release 브랜치 병합 감지
 2. 각 패키지의 버전 읽기
 3. Git 태그 생성:
    - @repo/hooks@1.0.0
@@ -148,20 +136,52 @@ web: 0.0.7 → 0.0.8
 5. 태그를 origin에 push
 ```
 
-### 6단계: Develop 동기화 (Release Manager)
-
-```bash
-# Release 완료 후 develop 동기화
-git checkout develop
-git merge main
-git push origin develop
-```
-
 ---
 
 ## 자동화 구성요소
 
-### 1. auto-changeset.yml
+### 1. Git Flow Hooks (.husky/)
+
+**위치**: `.husky/pre-flow-release-finish`, `.husky/pre-flow-hotfix-finish`
+
+**설치**: `pnpm install` 시 자동 설치 (`.git/hooks/`로 복사)
+
+#### pre-flow-release-finish
+
+**트리거**: `git flow release finish` 실행 전
+
+**주요 기능**:
+1. Changeset 존재 확인
+2. Changeset version 실행
+   ```bash
+   pnpm changeset version
+   ```
+3. 패키지 빌드
+   ```bash
+   pnpm build
+   ```
+4. 변경사항 커밋
+   ```bash
+   git commit -m "chore(release): version packages"
+   ```
+
+**결과**: Git Flow가 버전 업데이트를 포함하여 main과 develop 모두에 병합
+
+#### pre-flow-hotfix-finish
+
+**트리거**: `git flow hotfix finish` 실행 전
+
+**주요 기능**:
+1. 변경된 패키지 동적 감지
+2. Conventional Commits 분석하여 버전 범프 결정
+3. Changeset 자동 생성
+4. Changeset version 실행
+5. 패키지 빌드
+6. 변경사항 커밋
+
+**장점**: Hotfix도 동일한 자동화 혜택
+
+### 2. develop-changeset-automation.yml
 
 **트리거**: Feature PR이 develop에 머지될 때
 
@@ -173,12 +193,17 @@ git push origin develop
    feat! / BREAKING CHANGE: → major
    ```
 
-2. 변경된 패키지 감지
+2. 변경된 패키지 감지 (동적 탐색)
    ```javascript
+   // find로 모든 package.json 자동 탐색
    packages/hooks/ → @repo/hooks
    packages/ui/ → @repo/ui
+   packages/utils/ → @repo/utils (새 패키지도 자동!)
    apps/web/ → web
+   apps/admin/ → admin (새 앱도 자동!)
    ```
+
+   **✨ 새 패키지 추가 시 워크플로우 수정 불필요!**
 
 3. Changeset 파일 생성
    ```markdown
@@ -195,46 +220,15 @@ git push origin develop
 
 **중요**: 기존 changeset이 있으면 스킵 (중복 방지)
 
-### 2. release-branch.yml
-
-**트리거**: release/* 브랜치가 push될 때
-
-**주요 기능**:
-1. 이미 버전 업데이트되었는지 확인
-   ```bash
-   git log -1 | grep "chore(release): version packages"
-   ```
-
-2. Changeset version 실행
-   ```bash
-   pnpm changeset version
-   ```
-
-3. 빌드 실행
-   ```bash
-   pnpm build
-   ```
-
-4. 변경사항 커밋
-   ```bash
-   git commit -m "chore(release): version packages"
-   git push origin release/vX.X.X
-   ```
-
-5. Main PR 자동 생성 + Auto-merge
-   ```bash
-   gh pr create --base main --head release/vX.X.X
-   gh pr merge --auto --squash
-   ```
-
-### 3. release.yml
+### 3. release-tagging.yml (통합)
 
 **트리거**: Main 브랜치에 push될 때
 
 **주요 기능**:
-1. Release merge 감지
+1. Release/Hotfix 브랜치 병합 감지
    ```bash
-   git log -1 | grep "chore(release):"
+   git log -1 | grep "Merge branch 'release/"
+   git log -1 | grep "Merge branch 'hotfix/"
    ```
 
 2. 각 패키지의 버전 읽기
@@ -255,6 +249,11 @@ git push origin develop
      --title "@repo/hooks@1.0.0" \
      --notes "$(extract from CHANGELOG)"
    ```
+
+**특징**:
+- Release와 Hotfix 모두 처리
+- 버전 업데이트는 Git Flow hook에서 이미 완료됨
+- 태그 및 Release 생성만 담당
 
 ---
 
@@ -383,37 +382,38 @@ cat packages/hooks/package.json | grep version
 # Changeset에 patch만 있으면: 0.3.1
 ```
 
-#### 3. Release 브랜치 생성
+#### 3. Git Flow Release 시작
 
 ```bash
-# 브랜치명은 다음 버전으로
-git checkout -b release/v0.4.0
-git push origin release/v0.4.0
-
-# Github Actions 확인
-gh run list --branch release/v0.4.0
-
-# 워크플로우가 완료될 때까지 대기 (약 30초)
-gh run watch
+# Git Flow Release 시작
+git flow release start v0.4.0
 ```
 
-#### 4. PR 확인 및 모니터링
+#### 4. Git Flow Release 완료
 
 ```bash
-# 자동 생성된 PR 확인
-gh pr list --head release/v0.4.0
+# Release 완료
+git flow release finish -Fpn v0.4.0
 
-# PR 상세 확인
-gh pr view <PR_NUMBER>
+# ✅ Git Flow Hook이 자동으로:
+#    1. Changeset 존재 확인
+#    2. pnpm changeset version 실행
+#    3. package.json 버전 업데이트
+#    4. CHANGELOG.md 생성
+#    5. 패키지 빌드
+#    6. 변경사항 커밋
+#    7. main과 develop에 병합
 
-# Auto-merge 상태 확인
-# Status checks가 모두 통과하면 자동으로 머지됨
+# 플래그 설명:
+# -F: Fast-forward merge (merge commit 없이)
+# -p: Push to remote (자동 push)
+# -n: No tagging (Git Flow 태그 생성 안함, GitHub에서 생성)
 ```
 
 #### 5. Release 확인
 
 ```bash
-# Github Releases 확인
+# Github Releases 확인 (약 30초 후)
 gh release list
 
 # 특정 Release 확인
@@ -423,26 +423,22 @@ gh release view @repo/hooks@0.4.0
 git tag --list | grep 0.4.0
 ```
 
-#### 6. Develop 동기화
-
-```bash
-# Main의 변경사항을 develop으로
-git checkout develop
-git merge main
-git push origin develop
-```
+**자동화된 것들**:
+- ✅ 버전 업데이트 (로컬 Hook)
+- ✅ CHANGELOG 생성 (로컬 Hook)
+- ✅ Main + Develop 동기화 (Git Flow)
+- ✅ Git 태그 생성 (GitHub Actions)
+- ✅ GitHub Release 생성 (GitHub Actions)
 
 ### Release 검증 체크리스트
 
 - [ ] 모든 Feature가 develop에 머지되었는가?
 - [ ] Changeset 파일들이 생성되어 있는가?
-- [ ] Release PR이 자동으로 생성되었는가?
-- [ ] Auto-merge가 활성화되어 있는가?
-- [ ] Status checks가 모두 통과했는가?
-- [ ] Main에 성공적으로 머지되었는가?
+- [ ] `git flow release finish` 명령이 성공적으로 완료되었는가?
+- [ ] Hook이 버전 업데이트를 자동으로 수행했는가?
+- [ ] Main과 Develop 모두에 버전 업데이트가 반영되었는가?
 - [ ] Github Release 태그가 생성되었는가?
 - [ ] CHANGELOG가 올바르게 업데이트되었는가?
-- [ ] Develop이 Main과 동기화되었는가?
 
 ---
 
@@ -485,75 +481,49 @@ ls .changeset/*.md | grep auto
 4. **워크플로우가 실행되지 않음**
    ```bash
    # 워크플로우 실행 이력 확인
-   gh run list --workflow=auto-changeset.yml --limit 5
+   gh run list --workflow=develop-changeset-automation.yml --limit 5
    ```
    → 해결: Repository Settings → Actions 권한 확인
 
-### 문제 2: Release PR이 생성되지 않음
+### 문제 2: Git Flow Hook이 실행되지 않음
 
-**증상**:
-```bash
-gh pr list --head release/v1.0.0
-# no pull requests match your search
-```
+**증상**: `git flow release finish` 후에도 버전이 업데이트되지 않음
 
 **원인 및 해결**:
 
-1. **워크플로우 실행 실패**
+1. **Hook이 설치되지 않음**
    ```bash
-   gh run list --branch release/v1.0.0
-   # completed  failure  ...
+   # Hook 확인
+   ls -la .git/hooks/pre-flow-*
    ```
-   → 해결: 로그 확인
+   → 해결: pnpm install 재실행
    ```bash
-   gh run view <RUN_ID> --log
-   ```
-
-2. **이미 버전 업데이트가 완료됨**
-   ```bash
-   git log --oneline | head -1
-   # chore(release): version packages
-   ```
-   → 해결: 정상, PR이 이미 생성되었을 수 있음
-
-3. **Github Actions 권한 부족**
-   → Settings → Actions → General → Workflow permissions
-   → "Allow GitHub Actions to create and approve pull requests" 활성화
-
-### 문제 3: Auto-merge가 작동하지 않음
-
-**증상**: PR이 생성되었지만 자동으로 머지되지 않음
-
-**원인 및 해결**:
-
-1. **Status checks 실패**
-   ```bash
-   gh pr checks <PR_NUMBER>
-   ```
-   → 해결: 실패한 체크 수정
-
-2. **Auto-merge 미설정**
-   ```bash
-   gh pr view <PR_NUMBER> --json autoMergeRequest
-   ```
-   → 해결: 수동으로 설정
-   ```bash
-   gh pr merge <PR_NUMBER> --auto --squash
+   pnpm install
    ```
 
-3. **Repository 설정**
-   → Settings → General → Pull Requests
-   → "Allow auto-merge" 활성화
+2. **Hook 실행 권한 없음**
+   ```bash
+   # 권한 확인
+   ls -l .git/hooks/pre-flow-release-finish
+   ```
+   → 해결: 실행 권한 부여
+   ```bash
+   chmod +x .git/hooks/pre-flow-*
+   ```
 
-### 문제 4: Github Release 태그가 생성되지 않음
+3. **스크립트 오류**
+   → Hook 실행 중 표시되는 오류 메시지 확인
+   → 로그에서 실패 원인 파악
+
+### 문제 3: Github Release 태그가 생성되지 않음
 
 **증상**: Main에 머지되었지만 Release 태그 없음
 
 **원인 및 해결**:
 
-1. **release.yml 실행 확인**
+1. **release-tagging.yml 실행 확인**
    ```bash
-   gh run list --workflow=release.yml --limit 5
+   gh run list --workflow=release-tagging.yml --limit 5
    ```
 
 2. **로그 확인**
@@ -618,9 +588,8 @@ gh pr list --head release/v1.0.0
 gh run list --limit 10
 
 # 특정 워크플로우만
-gh run list --workflow=auto-changeset.yml --limit 5
-gh run list --workflow=release-branch.yml --limit 5
-gh run list --workflow=release.yml --limit 5
+gh run list --workflow=develop-changeset-automation.yml --limit 5
+gh run list --workflow=release-tagging.yml --limit 5
 
 # 실행 중인 워크플로우 확인
 gh run list --status in_progress
