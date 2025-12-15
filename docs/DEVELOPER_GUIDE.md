@@ -584,40 +584,43 @@ gh pr create --base develop
 ```bash
 # Release 담당자만 실행
 git checkout develop
-git checkout -b release/v1.0.0
-git push origin release/v1.0.0
+git flow release start v1.0.0
+git flow release finish -Fpn v1.0.0
 
-# 나머지는 자동! 🚀
+# Hook과 GitHub Actions가 모든 걸 자동으로 처리합니다! 🚀
 ```
 
 개발자는 Release를 만들 필요가 없습니다.
 
 ### Q7: Hotfix는 어떻게 하나요?
 
-**A**: Hotfix는 완전히 자동화되어 있습니다! 🚀
+**A**: Hotfix도 Git Flow를 사용하여 완전히 자동화되어 있습니다! 🚀
 
 ```bash
-# 1. Main에서 hotfix 브랜치 생성
-git checkout main
-git checkout -b hotfix/critical-bug
+# 1. Hotfix 시작
+git flow hotfix start fix-critical-bug
 
 # 2. 버그 수정 (Conventional Commit 사용)
 git commit -m "fix(hooks): critical security issue"
 
-# 3. Main에 PR 생성 및 머지
-gh pr create --base main --head hotfix/critical-bug
-gh pr merge --squash
+# 3. Hotfix 완료
+git flow hotfix finish -Fpn fix-critical-bug
 
-# 4. 워크플로우가 자동으로:
-#    ✅ Changeset 생성
-#    ✅ 즉시 버전 업데이트 & 릴리즈
-#    ✅ Develop 브랜치로 백포트
+# ✅ Git Flow Hook이 자동으로:
+#    - 변경된 패키지 감지
+#    - Changeset 생성
+#    - 버전 업데이트
+#    - main과 develop에 병합
+#
+# ✅ GitHub Actions가 자동으로:
+#    - Git 태그 생성
+#    - GitHub Release 생성
 ```
 
 **중요**:
-- 일반 릴리즈 프로세스를 우회하여 즉시 배포됩니다
+- Git Flow가 main과 develop을 자동으로 동기화합니다
 - 진짜 긴급 상황에만 사용하세요
-- 백포트 충돌 시 수동 해결 필요
+- Hook이 모든 버전 관리를 자동으로 처리합니다
 
 ### Q8: 여러 Feature를 동시에 개발 중인데, Release 타이밍은?
 

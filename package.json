@@ -10,7 +10,7 @@
     "changeset": "changeset",
     "version": "changeset version",
     "release": "pnpm build && changeset publish",
-    "prepare": "husky"
+    "prepare": "husky && bash scripts/install-gitflow-hooks.sh"
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.8",

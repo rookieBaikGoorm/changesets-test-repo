@@ -22,25 +22,174 @@ Feature PR → develop
     ↓
 develop-changeset-automation.yml (Changeset 자동 생성)
     ↓
-release/vX.X.X 브랜치 생성 (로컬)
+git flow release start (로컬)
     ↓
-git flow release finish (main 병합)
+git flow release finish (로컬)
     ↓
-main-release-tagging.yml (버전 업데이트 → 태그 생성 → Release)
+pre-flow-release-finish Hook (버전 업데이트)
+    ↓
+main 병합 (Git Flow)
+    ↓
+release-tagging.yml (태그 생성 → Release)
 
 [긴급 상황]
-hotfix/* → main
+git flow hotfix start/finish
     ↓
-hotfix-automation.yml (즉시 릴리즈 & develop 백포트)
+pre-flow-hotfix-finish Hook (Changeset 생성 → 버전 업데이트)
+    ↓
+main 병합 (Git Flow)
+    ↓
+release-tagging.yml (태그 생성 → Release)
 ```
 
 ### 파일 위치
 
 ```
+.husky/
+├── pre-flow-release-finish             # Release 버전 업데이트 Hook
+└── pre-flow-hotfix-finish              # Hotfix 버전 업데이트 Hook
+
 .github/workflows/
 ├── develop-changeset-automation.yml    # Feature → Develop 자동화
-├── main-release-tagging.yml            # Release 통합 자동화
-└── hotfix-automation.yml               # Hotfix 긴급 배포
+└── release-tagging.yml                 # Release & Hotfix 태그/Release 생성
+
+scripts/
+└── install-gitflow-hooks.sh            # Git Flow Hook 설치 스크립트
+```
+
+---
+
+## Git Flow Hooks
+
+### 개요
+
+Git Flow hooks는 `git flow` 명령 실행 시 자동으로 실행되는 스크립트입니다. 이 프로젝트에서는 release와 hotfix 완료 전에 자동으로 버전 업데이트를 수행합니다.
+
+### 설치 방식
+
+```bash
+# pnpm install 실행 시 자동 설치
+pnpm install
+
+# scripts/install-gitflow-hooks.sh가 실행됨
+# .husky/pre-flow-* → .git/hooks/pre-flow-*로 복사
+```
+
+### pre-flow-release-finish
+
+**위치**: `.husky/pre-flow-release-finish`
+
+**트리거**: `git flow release finish` 실행 전
+
+**주요 로직**:
+
+```bash
+#!/bin/bash
+set -e
+
+# 1. Release 브랜치 확인
+if [[ ! $BRANCH =~ ^release/ ]]; then
+  exit 0
+fi
+
+# 2. Changeset 파일 확인
+CHANGESET_FILES=$(ls .changeset/*.md 2>/dev/null | grep -v README.md || echo "")
+if [ -z "$CHANGESET_FILES" ]; then
+  # 경고 후 계속 여부 확인
+fi
+
+# 3. Changeset version 실행
+pnpm changeset version
+
+# 4. 빌드
+pnpm build
+
+# 5. 커밋
+git add .
+git commit -m "chore(release): version packages"
+```
+
+**결과**:
+- package.json 버전 업데이트
+- CHANGELOG.md 생성/업데이트
+- 변경사항이 release 브랜치에 커밋됨
+- `git flow release finish`가 이 커밋을 main과 develop에 병합
+
+### pre-flow-hotfix-finish
+
+**위치**: `.husky/pre-flow-hotfix-finish`
+
+**트리거**: `git flow hotfix finish` 실행 전
+
+**주요 로직**:
+
+```bash
+#!/bin/bash
+set -e
+
+# 1. Hotfix 브랜치 확인
+if [[ ! $BRANCH =~ ^hotfix/ ]]; then
+  exit 0
+fi
+
+# 2. 변경된 패키지 동적 감지
+MAIN_BRANCH=$(git config --get gitflow.branch.master || echo "main")
+CHANGED_FILES=$(git diff --name-only $MAIN_BRANCH...HEAD)
+
+while IFS= read -r pkg; do
+  PKG_DIR=$(dirname "$pkg")
+  if echo "$CHANGED_FILES" | grep -q "^$PKG_DIR/"; then
+    PACKAGES="$PACKAGES $PKG_NAME"
+  fi
+done < <(find packages apps -name package.json)
+
+# 3. Conventional Commits 분석
+COMMITS=$(git log --format=%s $MAIN_BRANCH..HEAD)
+BUMP_TYPE="patch"
+if echo "$COMMITS" | grep -qiE "^(feat|feature)"; then
+  BUMP_TYPE="minor"
+fi
+if echo "$COMMITS" | grep -qiE "^(BREAKING CHANGE|.*!:)"; then
+  BUMP_TYPE="major"
+fi
+
+# 4. Changeset 생성
+cat > .changeset/hotfix-${CHANGESET_ID}.md << EOF
+---
+"$PKG_NAME": $BUMP_TYPE
+---
+
+🚨 Hotfix: $BRANCH
+EOF
+
+# 5. Version 및 빌드
+pnpm changeset version
+pnpm build
+
+# 6. 커밋
+git add .
+git commit -m "chore(hotfix): version packages"
+```
+
+**특징**:
+- 변경된 패키지를 자동으로 감지
+- Conventional Commits 기반 버전 범프 자동 결정
+- Changeset 자동 생성
+- Release Hook과 동일한 처리 과정
+
+### Hook 디버깅
+
+Hook 실행 중 문제가 발생하면:
+
+```bash
+# Hook 파일 확인
+ls -la .git/hooks/pre-flow-*
+
+# 직접 실행해보기
+bash -x .git/hooks/pre-flow-release-finish
+
+# 로그 확인 (Hook은 stderr로 출력)
+git flow release finish v1.0.0 2>&1 | tee release.log
 ```
 
 ---
@@ -289,15 +438,13 @@ env:
 
 ---
 
-## main-release-tagging.yml
+## release-tagging.yml
 
 ### 목적
 
-**Git Flow 방식**으로 Release 브랜치가 Main에 병합되면 **모든 릴리즈 작업을 자동화**합니다:
-1. Changeset version 실행 (버전 업데이트)
-2. 버전 업데이트 커밋 → Main에 push
-3. Git 태그 생성
-4. GitHub Release 생성
+Release 또는 Hotfix 브랜치가 Main에 병합되면 **Git 태그와 GitHub Release를 자동 생성**합니다.
+
+**중요**: 버전 업데이트는 Git Flow Hook에서 이미 완료되었으므로, 이 워크플로우는 **태그와 Release 생성만** 담당합니다.
 
 ### 트리거
 
@@ -323,149 +470,111 @@ concurrency: ${{ github.workflow }}-${{ github.ref }}
   uses: actions/checkout@v4
   with:
     fetch-depth: 0
-    token: ${{ secrets.GITHUB_TOKEN }}
 
-- name: Install pnpm
-  uses: pnpm/action-setup@v4
-
-- name: Install dependencies
-  run: pnpm install --frozen-lockfile --prefer-offline
+- name: Setup Node.js
+  uses: actions/setup-node@v4
+  with:
+    node-version: 20
 ```
 
-#### 2. Release 브랜치 병합 감지
+#### 2. Release/Hotfix 브랜치 병합 감지
 
 ```yaml
-- name: Check if release branch merge
-  id: check-release
+- name: Check merge type
+  id: check-merge
   run: |
     COMMIT_MSG=$(git log -1 --pretty=%B)
 
-    if echo "$COMMIT_MSG" | grep -qE "Merge branch 'release/"; then
-      echo "is_release=true" >> $GITHUB_OUTPUT
-      echo "🎯 Release branch merge detected"
+    if echo "$COMMIT_MSG" | grep -qE "Merge branch '(release|hotfix)/"; then
+      echo "is_release_or_hotfix=true" >> $GITHUB_OUTPUT
+
+      if echo "$COMMIT_MSG" | grep -qE "Merge branch 'release/"; then
+        echo "merge_type=release" >> $GITHUB_OUTPUT
+        echo "🎯 Release 브랜치 병합 감지됨"
+      elif echo "$COMMIT_MSG" | grep -qE "Merge branch 'hotfix/"; then
+        echo "merge_type=hotfix" >> $GITHUB_OUTPUT
+        echo "🚨 Hotfix 브랜치 병합 감지됨"
+      fi
     else
-      echo "is_release=false" >> $GITHUB_OUTPUT
-      echo "ℹ️ Not a release merge, skipping"
+      echo "is_release_or_hotfix=false" >> $GITHUB_OUTPUT
+      echo "ℹ️ Release/Hotfix 병합이 아님, 스킵"
     fi
 ```
 
 **감지 로직**:
-- `git flow release finish` 실행 시 생성되는 merge commit 메시지 확인
-- 예: `Merge branch 'release/v1.0.0'`
-- Release 브랜치 병합만 처리, 다른 merge는 스킵
+- `git flow release finish` → `Merge branch 'release/v1.0.0'`
+- `git flow hotfix finish` → `Merge branch 'hotfix/fix-bug'`
+- Release와 Hotfix 모두 감지하여 처리
 
-#### 3. Changeset 존재 확인
-
-```yaml
-- name: Check for changesets
-  if: steps.check-release.outputs.is_release == 'true'
-  id: check-changesets
-  run: |
-    if [ -n "$(ls .changeset/*.md 2>/dev/null | grep -v README.md)" ]; then
-      echo "has_changeset=true" >> $GITHUB_OUTPUT
-      echo "✅ Changesets found, will process version update"
-    else
-      echo "has_changeset=false" >> $GITHUB_OUTPUT
-      echo "⚠️ No changesets found"
-    fi
-```
-
-**중요**: Changeset이 없으면 버전 업데이트 스킵
-
-#### 4. Changeset Version 실행
-
-```yaml
-- name: Run changeset version
-  if: steps.check-release.outputs.is_release == 'true' && steps.check-changesets.outputs.has_changeset == 'true'
-  run: |
-    pnpm changeset version
-    echo "✅ Version updated successfully"
-```
-
-**실행 내용**:
-1. `.changeset/*.md` 파일들을 읽어서 소비
-2. `package.json`의 `version` 필드 업데이트
-3. `CHANGELOG.md` 생성 또는 업데이트
-4. 사용된 changeset 파일 삭제
-5. 의존성 체인에 따라 관련 패키지도 업데이트
-
-**예시**:
-```
-Before:
-  @repo/hooks: 0.3.0
-  .changeset/auto-123.md (hooks minor)
-
-After:
-  @repo/hooks: 0.4.0 ✅
-  .changeset/auto-123.md (삭제됨)
-  CHANGELOG.md 생성
-```
-
-#### 5. 패키지 빌드
-
-```yaml
-- name: Build packages
-  if: steps.check-release.outputs.is_release == 'true' && steps.check-changesets.outputs.has_changeset == 'true'
-  run: pnpm build
-```
-
-#### 6. 버전 업데이트 커밋
-
-```yaml
-- name: Commit version updates
-  if: steps.check-release.outputs.is_release == 'true' && steps.check-changesets.outputs.has_changeset == 'true'
-  run: |
-    git config user.name "github-actions[bot]"
-    git config user.email "github-actions[bot]@users.noreply.github.com"
-
-    git add .
-    git commit -m "chore(release): version packages" || echo "No changes to commit"
-    git push origin main
-
-    echo "✅ Version updates committed to main"
-```
-
-**커밋 내용**:
-- 모든 `package.json` 변경사항
-- 모든 `CHANGELOG.md` 변경사항
-- `.changeset/` 파일 삭제
-
-#### 7. Git 태그 & GitHub Release 생성
+#### 3. Git 태그 & GitHub Release 생성
 
 ```yaml
 - name: Create tags and GitHub Releases
-  if: steps.check-release.outputs.is_release == 'true' && steps.check-changesets.outputs.has_changeset == 'true'
+  if: steps.check-merge.outputs.is_release_or_hotfix == 'true'
   env:
     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   run: |
-    echo "📦 Creating tags for updated packages..."
+    MERGE_TYPE="${{ steps.check-merge.outputs.merge_type }}"
 
-    # Find all package.json files and create tags
+    if [ "$MERGE_TYPE" = "hotfix" ]; then
+      echo "📦 Hotfix 태그 생성 중..."
+      TITLE_SUFFIX=" (Hotfix)"
+    else
+      echo "📦 Release 태그 생성 중..."
+      TITLE_SUFFIX=""
+    fi
+
+    echo ""
+    echo "ℹ️  버전 업데이트는 git-flow hook에서 이미 완료되었습니다"
+    echo ""
+
+    # 모든 package.json 파일을 찾아서 태그 생성
     for pkg_json in packages/*/package.json apps/*/package.json; do
-      if [ -f "$pkg_json" ]; then
-        PKG_NAME=$(node -p "require('./$pkg_json').name" 2>/dev/null || echo "")
-        PKG_VERSION=$(node -p "require('./$pkg_json').version" 2>/dev/null || echo "")
-        TAG_NAME="${PKG_NAME}@${PKG_VERSION}"
+      if [ ! -f "$pkg_json" ]; then continue; fi
 
-        # Check if tag already exists
-        if ! git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
-          echo "📦 Creating tag: $TAG_NAME"
-          git tag "$TAG_NAME"
-          git push origin "$TAG_NAME"
+      PKG_NAME=$(node -p "require('./$pkg_json').name" 2>/dev/null || echo "")
+      if [ -z "$PKG_NAME" ]; then continue; fi
 
-          # Create Github Release with CHANGELOG
-          CHANGELOG_PATH="${pkg_json%package.json}CHANGELOG.md"
-          if [ -f "$CHANGELOG_PATH" ]; then
-            RELEASE_NOTES=$(awk "/## $PKG_VERSION/,/## [0-9]/" "$CHANGELOG_PATH" | sed '1d;$d')
-            gh release create "$TAG_NAME" --title "$TAG_NAME" --notes "$RELEASE_NOTES"
+      PKG_VERSION=$(node -p "require('./$pkg_json').version" 2>/dev/null || echo "")
+      if [ -z "$PKG_VERSION" ]; then continue; fi
+
+      TAG_NAME="${PKG_NAME}@${PKG_VERSION}"
+
+      # 태그가 이미 존재하는지 확인
+      if ! git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+        echo "📦 태그 생성: $TAG_NAME"
+        git tag "$TAG_NAME"
+        git push origin "$TAG_NAME"
+
+        # Github Release 생성
+        CHANGELOG_PATH="${pkg_json%package.json}CHANGELOG.md"
+        if [ -f "$CHANGELOG_PATH" ]; then
+          RELEASE_NOTES=$(awk "/## $PKG_VERSION/,/## [0-9]/" "$CHANGELOG_PATH" | sed '1d;$d')
+
+          if [ -n "$RELEASE_NOTES" ]; then
+            gh release create "$TAG_NAME" \
+              --title "${TAG_NAME}${TITLE_SUFFIX}" \
+              --notes "$RELEASE_NOTES"
           else
-            gh release create "$TAG_NAME" --title "$TAG_NAME" --notes "Release $TAG_NAME"
+            gh release create "$TAG_NAME" \
+              --title "${TAG_NAME}${TITLE_SUFFIX}" \
+              --notes "Release $TAG_NAME"
           fi
-
-          echo "✅ Tag and release created for $TAG_NAME"
+        else
+          gh release create "$TAG_NAME" \
+            --title "${TAG_NAME}${TITLE_SUFFIX}" \
+            --notes "Release $TAG_NAME"
         fi
+
+        echo "✅ 태그 및 릴리즈 생성 완료: $TAG_NAME"
+        echo ""
+      else
+        echo "✅ 태그 $TAG_NAME 이미 존재함, 스킵"
+        echo ""
       fi
     done
+
+    echo "✅ 모든 릴리즈 배포 완료"
 ```
 
 **로직 상세**:
@@ -526,6 +635,11 @@ Notes:
 - fix(hooks): fix memory leak (#17)
 ```
 
+**특징**:
+- Release와 Hotfix를 단일 워크플로우로 처리
+- Hotfix Release에는 "(Hotfix)" 접미사 추가
+- 버전 업데이트는 Hook에서 이미 완료되었으므로 즉시 태그 생성 가능
+
 ### 권한 요구사항
 
 ```yaml
@@ -551,117 +665,6 @@ npm publish를 활성화하려면:
 
 ---
 
-## hotfix-automation.yml
-
-### 목적
-
-긴급 프로덕션 버그 수정을 위한 Hotfix 워크플로우입니다. `hotfix/*` 브랜치가 main에 머지되면:
-1. 자동으로 changeset 생성
-2. 즉시 버전 업데이트 및 릴리즈
-3. Develop 브랜치로 자동 백포트
-
-### 트리거
-
-```yaml
-on:
-  pull_request:
-    types: [closed]
-    branches:
-      - main
-```
-
-**조건**:
-- PR이 **main 브랜치**에 머지되었을 때
-- 소스 브랜치가 **hotfix/**로 시작할 때
-
-### 워크플로우 단계
-
-#### 1. Changeset 생성
-
-```yaml
-- name: Generate changeset
-  run: |
-    CHANGESET_FILE=".changeset/hotfix-${CHANGESET_ID}.md"
-    echo "---" > $CHANGESET_FILE
-    for pkg in $PACKAGES; do
-      echo "\"$pkg\": $BUMP_TYPE" >> $CHANGESET_FILE
-    done
-    echo "---" >> $CHANGESET_FILE
-    echo "$PR_TITLE (#$PR_NUMBER)" >> $CHANGESET_FILE
-    echo "🚨 Hotfix from \`$HOTFIX_BRANCH\`" >> $CHANGESET_FILE
-```
-
-- 변경된 패키지를 동적으로 감지
-- Conventional Commits 기반 버전 범프 결정 (기본: patch)
-- Hotfix 표시 추가
-
-#### 2. 즉시 릴리즈
-
-```yaml
-- name: Create hotfix release immediately
-  run: |
-    pnpm changeset version
-    pnpm build
-    git commit -m "chore(hotfix): version packages for hotfix #$PR_NUMBER"
-    git push origin main
-```
-
-- Changeset 생성 직후 즉시 버전 업데이트
-- 빌드 실행 및 main에 Push
-- 일반 릴리즈 프로세스보다 훨씬 빠름
-
-#### 3. Develop 백포트
-
-```yaml
-- name: Backport to develop
-  run: |
-    git fetch origin develop
-    git checkout develop
-    git merge origin/main -m "chore: backport hotfix #$PR_NUMBER from main"
-    git push origin develop
-```
-
-- Hotfix 변경사항을 develop에 자동으로 백포트
-- Merge conflict 발생 시 워크플로우 실패 (수동 해결 필요)
-
-### 권한 요구사항
-
-```yaml
-permissions:
-  contents: write      # Changeset 생성, 버전 업데이트, 백포트
-  pull-requests: write # (미래 확장용)
-```
-
-### 주의사항
-
-1. **Hotfix는 patch가 기본**: 긴급 수정은 일반적으로 patch 버전이지만, Conventional Commits으로 minor/major도 가능
-2. **백포트 충돌**: Develop과 main이 크게 달라진 경우 백포트 중 충돌 발생 가능
-3. **즉시 릴리즈**: PR 머지 즉시 프로덕션 릴리즈되므로 신중하게 사용
-4. **릴리즈 브랜치 우회**: 일반 Git Flow를 우회하므로 진짜 긴급 상황에만 사용
-
-### 사용 시나리오
-
-```bash
-# 1. Hotfix 브랜치 생성
-git checkout -b hotfix/fix-critical-bug main
-
-# 2. 버그 수정 (Conventional Commit 사용)
-git commit -m "fix(ui): resolve XSS vulnerability in input component"
-
-# 3. Main에 PR 생성 및 머지
-gh pr create --base main --head hotfix/fix-critical-bug
-gh pr merge --squash
-
-# 4. 워크플로우가 자동으로:
-#    - Changeset 생성
-#    - 버전 업데이트 (예: 1.2.3 → 1.2.4)
-#    - Main에 커밋 & Push
-#    - Github Release 태그 생성
-#    - Develop에 백포트
-```
-
----
-
 ## 워크플로우 간 관계
 
 ### 데이터 흐름
@@ -673,34 +676,43 @@ gh pr merge --squash
    ↓
    .changeset/auto-123.md 생성
    ↓
-2. Release 브랜치 생성 (로컬)
+2. Release 시작 및 완료 (로컬)
    git flow release start v1.0.0
-   (여러 커밋 작업 가능)
-   ↓
-3. Release 병합 (로컬)
    git flow release finish -Fpn v1.0.0
    ↓
-   Main + Develop 병합
-   ↓
-4. Main push 감지
-   [main-release-tagging.yml]
+   [pre-flow-release-finish Hook] (로컬 실행)
    ↓
    pnpm changeset version 실행
    package.json 업데이트
    CHANGELOG.md 업데이트
    .changeset/auto-123.md 삭제
+   커밋 생성
    ↓
-   Main에 버전 업데이트 커밋
+   Git Flow가 main + develop에 병합
+   ↓
+3. Main push 감지
+   [release-tagging.yml]
    ↓
    Git 태그 생성
    Github Release 생성
 
 [긴급 상황]
-Hotfix PR 머지 (main)
+git flow hotfix start/finish (로컬)
    ↓
-   [hotfix-automation.yml]
+   [pre-flow-hotfix-finish Hook] (로컬 실행)
    ↓
-   Changeset 생성 → 즉시 릴리즈 → develop 백포트
+   변경 패키지 감지
+   Changeset 생성
+   pnpm changeset version 실행
+   버전 업데이트
+   커밋 생성
+   ↓
+   Git Flow가 main + develop에 병합
+   ↓
+   [release-tagging.yml]
+   ↓
+   Git 태그 생성
+   Github Release 생성 (Hotfix 표시)
 ```
 
 ### 상태 전이
@@ -709,25 +721,54 @@ Hotfix PR 머지 (main)
 State 1: Clean develop
   ↓ (Feature PR 머지)
 State 2: Develop with changesets
-  ↓ (Release 브랜치 생성)
-State 3: Release 브랜치 (버전 업데이트됨)
-  ↓ (Main PR 머지)
-State 4: Main with new versions
-  ↓ (Release 태그 생성)
-State 5: Tagged release
+  ↓ (git flow release start)
+State 3: Release 브랜치 (changeset 포함)
+  ↓ (git flow release finish)
+  ↓ (Hook: 버전 업데이트 + 커밋)
+State 4: Release 브랜치 (버전 업데이트됨)
+  ↓ (Git Flow: main + develop 병합)
+State 5: Main & Develop with new versions
+  ↓ (GitHub Actions: 태그 생성)
+State 6: Tagged release
 ```
 
 ### 의존성
 
 ```
-release-branch.yml
+pre-flow-release-finish Hook
   depends on:
-    - .changeset/*.md (auto-changeset.yml이 생성)
+    - .changeset/*.md (develop-changeset-automation.yml이 생성)
 
-release.yml
+pre-flow-hotfix-finish Hook
   depends on:
-    - package.json 버전 (release-branch.yml이 업데이트)
-    - CHANGELOG.md (release-branch.yml이 업데이트)
+    - Git commit history (Conventional Commits 분석)
+    - Changed files (패키지 감지)
+
+release-tagging.yml
+  depends on:
+    - package.json 버전 (Hook이 업데이트)
+    - CHANGELOG.md (Hook이 업데이트)
+    - Git Flow merge commit 메시지
+```
+
+### Hook과 GitHub Actions의 역할 분담
+
+```
+로컬 (Git Flow Hooks):
+  ✅ Changeset version 실행
+  ✅ 버전 업데이트
+  ✅ CHANGELOG 생성
+  ✅ 빌드
+  ✅ 커밋
+
+Git Flow:
+  ✅ Main + Develop 병합
+  ✅ 브랜치 관리
+
+GitHub Actions:
+  ✅ Git 태그 생성
+  ✅ GitHub Release 생성
+  ✅ Feature PR Changeset 자동 생성
 ```
 
 ---
