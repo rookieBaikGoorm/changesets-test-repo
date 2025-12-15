@@ -3,7 +3,7 @@ import React from 'react';
 export interface ButtonProps {
   children: React.ReactNode;
   onClick?: () => void;
-  variant?: 'primary' | 'secondary';
+  variant?: 'primary' | 'secondary' | 'success';
   disabled?: boolean;
 }
 
@@ -32,6 +32,10 @@ export const Button: React.FC<ButtonProps> = ({
     },
     secondary: {
       backgroundColor: '#646cff',
+      color: '#fff',
+    },
+    success: {
+      backgroundColor: '#22c55e',
       color: '#fff',
     },
   };
