@@ -52,29 +52,41 @@ pnpm lint
 
 이 프로젝트는 **Conventional Commits**로 버전 관리를 **완전히 자동화**합니다.
 
+### 브랜치 전략
+
+```
+feature/* → develop → main
+```
+
+- **feature/**: 기능 개발
+- **develop**: 통합 개발 (changesets 수집)
+- **main**: 프로덕션 릴리스 (버전 업데이트)
+
 ### 개발자는 이것만 하면 됩니다
 
 ```bash
-# 1. 코드 작성
+# 1. Feature 브랜치에서 코드 작성
+git checkout develop
 git checkout -b feature/my-feature
 
 # 2. Conventional Commits로 커밋
 git commit -m "feat(ui): add new component"
 
-# 3. PR 생성 및 머지
+# 3. PR 생성 (develop으로!)
+gh pr create --base develop
 ```
 
 ### 자동으로 처리되는 것들
 
-✅ Changeset 자동 생성
+✅ **Feature → Develop**: Changeset 자동 생성
+✅ **Develop → Main**: "Version Packages" PR 자동 생성
 ✅ 버전 번호 자동 계산 (feat→minor, fix→patch)
 ✅ CHANGELOG 자동 생성
-✅ "Version Packages" PR 자동 생성
 ✅ (설정 시) npm 자동 배포
 
 **개발자는 changesets을 전혀 신경쓰지 않아도 됩니다!**
 
-자세한 내용은 [RELEASE_WORKFLOW.md](./RELEASE_WORKFLOW.md)를 참조하세요.
+자세한 내용은 [BRANCHING_STRATEGY.md](./BRANCHING_STRATEGY.md)와 [RELEASE_WORKFLOW.md](./RELEASE_WORKFLOW.md)를 참조하세요.
 
 ## 명령어
 
