@@ -13,6 +13,11 @@ changesets-test-repo/
 │   ├── hooks/                  # @repo/hooks - React 커스텀 훅
 │   ├── eslint-config/          # @repo/eslint-config - ESLint 설정
 │   └── typescript-config/      # @repo/typescript-config - TypeScript 설정
+├── docs/                       # 📚 상세 문서
+│   ├── AUTOMATION_GUIDE.md     # 자동화 시스템 가이드
+│   ├── DEVELOPER_GUIDE.md      # 개발자 실용 가이드
+│   ├── TEST_SCENARIOS.md       # 테스트 시나리오
+│   └── WORKFLOWS.md            # 워크플로우 상세 설명
 └── .github/
     └── workflows/              # Github Actions 워크플로우
 ```
@@ -141,6 +146,42 @@ React 커스텀 훅 라이브러리
 - web: 0.0.2
 
 자세한 변경 이력은 각 패키지의 CHANGELOG.md를 참조하세요.
+
+## 📚 문서
+
+상세한 가이드와 문서는 [docs](./docs/) 폴더를 참조하세요:
+
+### 개발자용
+- **[Developer Guide](./docs/DEVELOPER_GUIDE.md)** - 개발자를 위한 실용 가이드
+  - 빠른 시작
+  - 일상적인 개발 플로우
+  - Conventional Commits 완벽 가이드
+  - 자주 하는 작업들
+  - FAQ
+
+### 시스템 이해
+- **[Automation Guide](./docs/AUTOMATION_GUIDE.md)** - 전체 자동화 시스템 가이드
+  - 워크플로우 설명
+  - 개발자 경험
+  - Release 담당자 가이드
+  - 트러블슈팅
+
+- **[Workflows](./docs/WORKFLOWS.md)** - Github Actions 워크플로우 상세 설명
+  - auto-changeset.yml 상세
+  - release-branch.yml 상세
+  - release.yml 상세
+  - 커스터마이징 가이드
+
+### 테스트
+- **[Test Scenarios](./docs/TEST_SCENARIOS.md)** - 테스트 시나리오 및 체크리스트
+  - 12가지 테스트 시나리오
+  - 우선순위별 분류
+  - 테스트 체크리스트
+
+### 기존 문서
+- [Branching Strategy](./BRANCHING_STRATEGY.md) - Git Flow 브랜치 전략
+- [Release Workflow](./RELEASE_WORKFLOW.md) - 릴리즈 워크플로우
+- [Contributing](./CONTRIBUTING.md) - 기여 가이드
 
 ## 테스트 시나리오
 
