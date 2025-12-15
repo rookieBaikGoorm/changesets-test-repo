@@ -6,7 +6,6 @@
 
 - [워크플로우 개요](#워크플로우-개요)
 - [develop-changeset-automation.yml](#develop-changeset-automationyml)
-- [release-version-update.yml](#release-version-updateyml)
 - [main-release-tagging.yml](#main-release-taggingyml)
 - [hotfix-automation.yml](#hotfix-automationyml)
 - [워크플로우 간 관계](#워크플로우-간-관계)
@@ -23,13 +22,11 @@ Feature PR → develop
     ↓
 develop-changeset-automation.yml (Changeset 자동 생성)
     ↓
-release/vX.X.X 브랜치 생성
+release/vX.X.X 브랜치 생성 (로컬)
     ↓
-release-version-update.yml (버전 업데이트 & PR 생성)
+git flow release finish (main 병합)
     ↓
-main PR 자동 머지
-    ↓
-main-release-tagging.yml (Github Release 태그 생성)
+main-release-tagging.yml (버전 업데이트 → 태그 생성 → Release)
 
 [긴급 상황]
 hotfix/* → main
@@ -42,8 +39,7 @@ hotfix-automation.yml (즉시 릴리즈 & develop 백포트)
 ```
 .github/workflows/
 ├── develop-changeset-automation.yml    # Feature → Develop 자동화
-├── release-version-update.yml          # Release 브랜치 자동화
-├── main-release-tagging.yml            # Main 배포 자동화
+├── main-release-tagging.yml            # Release 통합 자동화
 └── hotfix-automation.yml               # Hotfix 긴급 배포
 ```
 
@@ -293,250 +289,15 @@ env:
 
 ---
 
-## release-version-update.yml
-
-### 목적
-
-Release 브랜치가 생성되면 자동으로:
-1. `pnpm changeset version` 실행하여 버전 업데이트
-2. 변경사항을 release 브랜치에 커밋
-3. Main으로 PR 자동 생성
-4. Auto-merge 활성화
-
-### 트리거
-
-```yaml
-on:
-  push:
-    branches:
-      - 'release/**'
-```
-
-**조건**:
-- `release/` prefix로 시작하는 모든 브랜치
-- 예시: `release/v1.0.0`, `release/2024-Q1`
-
-### 워크플로우 단계
-
-#### 1. 환경 설정
-
-```yaml
-- name: Checkout Repo
-  uses: actions/checkout@v4
-  with:
-    fetch-depth: 0
-    token: ${{ secrets.GITHUB_TOKEN }}
-
-- name: Setup Node.js
-  uses: actions/setup-node@v4
-  with:
-    node-version: 22
-
-- name: Install pnpm
-  uses: pnpm/action-setup@v4
-
-- name: Install dependencies
-  run: pnpm install --frozen-lockfile
-```
-
-#### 2. 중복 실행 방지
-
-```yaml
-- name: Check if version already updated
-  id: check-version
-  run: |
-    if git log -1 --pretty=%B | grep -q "chore(release): version packages"; then
-      echo "already_versioned=true" >> $GITHUB_OUTPUT
-      echo "✅ Version already updated"
-    else
-      echo "already_versioned=false" >> $GITHUB_OUTPUT
-      echo "⚠️ Need to run version update"
-    fi
-```
-
-**로직**:
-- 가장 최근 커밋 메시지에 "chore(release): version packages"가 있으면 스킵
-- Release 브랜치에 추가 push가 발생해도 중복 실행 방지
-
-#### 3. Changeset Version 실행
-
-```yaml
-- name: Run changeset version
-  if: steps.check-version.outputs.already_versioned == 'false'
-  run: |
-    pnpm changeset version
-    echo "✅ Version updated successfully"
-```
-
-**실행 내용**:
-1. `.changeset/*.md` 파일들을 읽어서 소비
-2. `package.json`의 `version` 필드 업데이트
-3. `CHANGELOG.md` 생성 또는 업데이트
-4. 사용된 changeset 파일 삭제
-5. 의존성 체인에 따라 관련 패키지도 업데이트
-
-**예시**:
-```
-Before:
-  @repo/hooks: 0.3.0
-  web: 0.0.4
-  .changeset/auto-123.md (hooks minor)
-
-After:
-  @repo/hooks: 0.4.0 ✅
-  web: 0.0.5 ✅ (의존성 업데이트)
-  .changeset/auto-123.md (삭제됨)
-```
-
-#### 4. 패키지 빌드
-
-```yaml
-- name: Build packages
-  if: steps.check-version.outputs.already_versioned == 'false'
-  run: pnpm build
-```
-
-**목적**:
-- TypeScript 컴파일 확인
-- 빌드 에러 사전 감지
-
-#### 5. 버전 업데이트 커밋
-
-```yaml
-- name: Commit version updates
-  if: steps.check-version.outputs.already_versioned == 'false'
-  run: |
-    git config user.name "github-actions[bot]"
-    git config user.email "github-actions[bot]@users.noreply.github.com"
-
-    git add .
-    git commit -m "chore(release): version packages" || echo "No changes to commit"
-    git push origin ${{ github.ref_name }}
-```
-
-**커밋 내용**:
-- 모든 `package.json` 변경사항
-- 모든 `CHANGELOG.md` 변경사항
-- `.changeset/` 파일 삭제
-
-#### 6. Main PR 생성 & Auto-merge
-
-이 단계는 가장 중요한 부분으로, **상세한 한국어 릴리즈 노트**를 포함한 PR을 생성합니다.
-
-**핵심 로직**:
-```yaml
-# 1. PR body 생성 (pr_body.md)
-echo "## 📦 버전 변경 사항" > pr_body.md
-
-# 2. 각 패키지의 버전 변경 추출
-for pkg_json in packages/*/package.json apps/*/package.json; do
-  OLD_VERSION=$(git show HEAD~1:$pkg_json | node -p "...")
-  NEW_VERSION=$(node -p "require('./$pkg_json').version")
-
-  if [ "$OLD_VERSION" != "$NEW_VERSION" ]; then
-    echo "- **$PKG_NAME**: \`$OLD_VERSION\` → \`$NEW_VERSION\`" >> pr_body.md
-  fi
-done
-
-# 3. CHANGELOG에서 변경 내역 추출
-for changelog in packages/*/CHANGELOG.md; do
-  CHANGES=$(awk "/^## $PKG_VERSION/{flag=1; next} /^## [0-9]/{flag=0} flag" "$changelog")
-  echo "### $PKG_NAME" >> pr_body.md
-  echo "$CHANGES" >> pr_body.md
-done
-
-# 4. PR 생성 및 Auto-merge
-gh pr create --body-file pr_body.md
-gh pr merge $PR_NUMBER --auto --squash
-```
-
-**생성되는 PR Body 예시**:
-
-```markdown
-## 📦 버전 변경 사항
-
-- **@repo/hooks**: `0.3.0` → `0.4.0`
-- **@repo/ui**: `0.2.1` → `0.2.2`
-- **web**: `0.0.7` → `0.0.8`
-
-## 📝 포함된 변경사항
-
-### @repo/hooks
-
-#### Minor Changes
-
-- feat(hooks): add useDebounce hook (#42)
-
-#### Patch Changes
-
-- fix(hooks): fix memory leak in useEffect (#43)
-
-### @repo/ui
-
-#### Patch Changes
-
-- fix(ui): fix Button disabled state (#44)
-
-### web
-
-#### Patch Changes
-
-- Updated dependencies
-  - @repo/hooks@0.4.0
-
----
-
-**병합 후 자동 처리:**
-- ✅ Github Release 태그 자동 생성
-- ✅ CHANGELOG 파일 업데이트 완료
-- ⚠️  `develop` 브랜치로 백포트 필요
-```
-
-**PR 생성 로직**:
-1. 기존 PR 존재 여부 확인 (중복 방지)
-2. 브랜치명에서 버전 추출 (`release/v1.0.0` → `v1.0.0`)
-3. **상세한 릴리즈 노트 생성** (버전 변경 + CHANGELOG)
-4. `gh pr create --body-file`로 PR 생성
-5. `gh pr merge --auto`로 auto-merge 활성화
-
-**Auto-merge**:
-- 모든 status checks가 통과하면 자동으로 squash merge
-- Repository 설정에서 "Allow auto-merge" 활성화 필요
-
-**장점**:
-- ✅ 한눈에 무엇이 변경되는지 파악
-- ✅ PR만 봐도 릴리즈 내역 확인 가능
-- ✅ 리뷰어가 파일을 열어보지 않아도 됨
-- ✅ 릴리즈 승인 프로세스에 유용
-
-### 권한 요구사항
-
-```yaml
-permissions:
-  contents: write      # 커밋 & Push
-  pull-requests: write # PR 생성 & Auto-merge
-```
-
-### Repository 설정 요구사항
-
-1. **Actions 권한**:
-   - Settings → Actions → General → Workflow permissions
-   - "Allow GitHub Actions to create and approve pull requests" ✅
-
-2. **Auto-merge 활성화**:
-   - Settings → General → Pull Requests
-   - "Allow auto-merge" ✅
-
----
-
 ## main-release-tagging.yml
 
 ### 목적
 
-Main 브랜치에 release merge가 발생하면:
-1. 각 패키지의 버전을 읽어서 Git 태그 생성
-2. CHANGELOG에서 release notes 추출
-3. Github Release 자동 생성
+**Git Flow 방식**으로 Release 브랜치가 Main에 병합되면 **모든 릴리즈 작업을 자동화**합니다:
+1. Changeset version 실행 (버전 업데이트)
+2. 버전 업데이트 커밋 → Main에 push
+3. Git 태그 생성
+4. GitHub Release 생성
 
 ### 트리거
 
@@ -560,80 +321,156 @@ concurrency: ${{ github.workflow }}-${{ github.ref }}
 ```yaml
 - name: Checkout Repo
   uses: actions/checkout@v4
-
-- name: Setup Node.js
-  uses: actions/setup-node@v4
   with:
-    node-version: 20
+    fetch-depth: 0
+    token: ${{ secrets.GITHUB_TOKEN }}
 
 - name: Install pnpm
   uses: pnpm/action-setup@v4
 
 - name: Install dependencies
-  run: pnpm install --frozen-lockfile
+  run: pnpm install --frozen-lockfile --prefer-offline
+```
 
+#### 2. Release 브랜치 병합 감지
+
+```yaml
+- name: Check if release branch merge
+  id: check-release
+  run: |
+    COMMIT_MSG=$(git log -1 --pretty=%B)
+
+    if echo "$COMMIT_MSG" | grep -qE "Merge branch 'release/"; then
+      echo "is_release=true" >> $GITHUB_OUTPUT
+      echo "🎯 Release branch merge detected"
+    else
+      echo "is_release=false" >> $GITHUB_OUTPUT
+      echo "ℹ️ Not a release merge, skipping"
+    fi
+```
+
+**감지 로직**:
+- `git flow release finish` 실행 시 생성되는 merge commit 메시지 확인
+- 예: `Merge branch 'release/v1.0.0'`
+- Release 브랜치 병합만 처리, 다른 merge는 스킵
+
+#### 3. Changeset 존재 확인
+
+```yaml
+- name: Check for changesets
+  if: steps.check-release.outputs.is_release == 'true'
+  id: check-changesets
+  run: |
+    if [ -n "$(ls .changeset/*.md 2>/dev/null | grep -v README.md)" ]; then
+      echo "has_changeset=true" >> $GITHUB_OUTPUT
+      echo "✅ Changesets found, will process version update"
+    else
+      echo "has_changeset=false" >> $GITHUB_OUTPUT
+      echo "⚠️ No changesets found"
+    fi
+```
+
+**중요**: Changeset이 없으면 버전 업데이트 스킵
+
+#### 4. Changeset Version 실행
+
+```yaml
+- name: Run changeset version
+  if: steps.check-release.outputs.is_release == 'true' && steps.check-changesets.outputs.has_changeset == 'true'
+  run: |
+    pnpm changeset version
+    echo "✅ Version updated successfully"
+```
+
+**실행 내용**:
+1. `.changeset/*.md` 파일들을 읽어서 소비
+2. `package.json`의 `version` 필드 업데이트
+3. `CHANGELOG.md` 생성 또는 업데이트
+4. 사용된 changeset 파일 삭제
+5. 의존성 체인에 따라 관련 패키지도 업데이트
+
+**예시**:
+```
+Before:
+  @repo/hooks: 0.3.0
+  .changeset/auto-123.md (hooks minor)
+
+After:
+  @repo/hooks: 0.4.0 ✅
+  .changeset/auto-123.md (삭제됨)
+  CHANGELOG.md 생성
+```
+
+#### 5. 패키지 빌드
+
+```yaml
 - name: Build packages
+  if: steps.check-release.outputs.is_release == 'true' && steps.check-changesets.outputs.has_changeset == 'true'
   run: pnpm build
 ```
 
-#### 2. Release Merge 감지 & 태그 생성
+#### 6. 버전 업데이트 커밋
 
 ```yaml
-- name: Check for version changes and create tags
+- name: Commit version updates
+  if: steps.check-release.outputs.is_release == 'true' && steps.check-changesets.outputs.has_changeset == 'true'
+  run: |
+    git config user.name "github-actions[bot]"
+    git config user.email "github-actions[bot]@users.noreply.github.com"
+
+    git add .
+    git commit -m "chore(release): version packages" || echo "No changes to commit"
+    git push origin main
+
+    echo "✅ Version updates committed to main"
+```
+
+**커밋 내용**:
+- 모든 `package.json` 변경사항
+- 모든 `CHANGELOG.md` 변경사항
+- `.changeset/` 파일 삭제
+
+#### 7. Git 태그 & GitHub Release 생성
+
+```yaml
+- name: Create tags and GitHub Releases
+  if: steps.check-release.outputs.is_release == 'true' && steps.check-changesets.outputs.has_changeset == 'true'
   env:
     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   run: |
-    # Check if this is a release merge (contains version updates)
-    if git log -1 --pretty=%B | grep -q "chore(release):"; then
-      echo "🎯 Release merge detected, creating tags..."
+    echo "📦 Creating tags for updated packages..."
 
-      # Find all package.json files and create tags
-      for pkg_json in packages/*/package.json apps/*/package.json; do
-        if [ -f "$pkg_json" ]; then
-          PKG_NAME=$(node -p "require('./$pkg_json').name")
-          PKG_VERSION=$(node -p "require('./$pkg_json').version")
-          TAG_NAME="${PKG_NAME}@${PKG_VERSION}"
+    # Find all package.json files and create tags
+    for pkg_json in packages/*/package.json apps/*/package.json; do
+      if [ -f "$pkg_json" ]; then
+        PKG_NAME=$(node -p "require('./$pkg_json').name" 2>/dev/null || echo "")
+        PKG_VERSION=$(node -p "require('./$pkg_json').version" 2>/dev/null || echo "")
+        TAG_NAME="${PKG_NAME}@${PKG_VERSION}"
 
-          # Check if tag already exists
-          if ! git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
-            echo "📦 Creating tag: $TAG_NAME"
-            git tag "$TAG_NAME"
-            git push origin "$TAG_NAME"
+        # Check if tag already exists
+        if ! git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+          echo "📦 Creating tag: $TAG_NAME"
+          git tag "$TAG_NAME"
+          git push origin "$TAG_NAME"
 
-            # Create Github Release
-            CHANGELOG_PATH="${pkg_json%package.json}CHANGELOG.md"
-            if [ -f "$CHANGELOG_PATH" ]; then
-              # Extract changelog for this version
-              RELEASE_NOTES=$(awk "/## $PKG_VERSION/,/## [0-9]/" "$CHANGELOG_PATH" | sed '1d;$d')
-              gh release create "$TAG_NAME" \
-                --title "$TAG_NAME" \
-                --notes "$RELEASE_NOTES" || echo "⚠️ Failed to create release for $TAG_NAME"
-            else
-              gh release create "$TAG_NAME" \
-                --title "$TAG_NAME" \
-                --notes "Release $TAG_NAME" || echo "⚠️ Failed to create release for $TAG_NAME"
-            fi
-
-            echo "✅ Tag and release created for $TAG_NAME"
+          # Create Github Release with CHANGELOG
+          CHANGELOG_PATH="${pkg_json%package.json}CHANGELOG.md"
+          if [ -f "$CHANGELOG_PATH" ]; then
+            RELEASE_NOTES=$(awk "/## $PKG_VERSION/,/## [0-9]/" "$CHANGELOG_PATH" | sed '1d;$d')
+            gh release create "$TAG_NAME" --title "$TAG_NAME" --notes "$RELEASE_NOTES"
           else
-            echo "✅ Tag $TAG_NAME already exists, skipping"
+            gh release create "$TAG_NAME" --title "$TAG_NAME" --notes "Release $TAG_NAME"
           fi
+
+          echo "✅ Tag and release created for $TAG_NAME"
         fi
-      done
-    else
-      echo "ℹ️ Not a release merge, skipping tag creation"
-    fi
+      fi
+    done
 ```
 
 **로직 상세**:
 
-1. **Release Merge 확인**:
-   ```bash
-   git log -1 --pretty=%B | grep -q "chore(release):"
-   ```
-   - 가장 최근 커밋 메시지에 "chore(release):" 포함 여부
-
-2. **패키지 탐색**:
+1. **패키지 탐색**:
    ```bash
    for pkg_json in packages/*/package.json apps/*/package.json
    ```
@@ -836,21 +673,24 @@ gh pr merge --squash
    ↓
    .changeset/auto-123.md 생성
    ↓
-2. Release 브랜치 push
+2. Release 브랜치 생성 (로컬)
+   git flow release start v1.0.0
+   (여러 커밋 작업 가능)
    ↓
-   [release-version-update.yml]
+3. Release 병합 (로컬)
+   git flow release finish -Fpn v1.0.0
+   ↓
+   Main + Develop 병합
+   ↓
+4. Main push 감지
+   [main-release-tagging.yml]
    ↓
    pnpm changeset version 실행
-   ↓
    package.json 업데이트
    CHANGELOG.md 업데이트
    .changeset/auto-123.md 삭제
    ↓
-   Main PR 생성 + Auto-merge
-   ↓
-3. Main 머지
-   ↓
-   [main-release-tagging.yml]
+   Main에 버전 업데이트 커밋
    ↓
    Git 태그 생성
    Github Release 생성
