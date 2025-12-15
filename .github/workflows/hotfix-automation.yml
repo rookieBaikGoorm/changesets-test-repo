@@ -5,9 +5,11 @@ on:
     branches:
       - main
 
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
 jobs:
   hotfix-release:
-    name: Hotfix Release & Backport
+    name: Hotfix Release
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -22,25 +24,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Get pnpm store directory
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - name: Setup pnpm cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --prefer-offline
 
       - name: Check if hotfix branch merge
         id: check-hotfix
@@ -59,150 +42,60 @@ jobs:
             echo "ℹ️ Hotfix 병합이 아님, 스킵"
           fi
 
-      - name: Detect changed packages
-        if: steps.check-hotfix.outputs.is_hotfix == 'true'
-        id: detect-packages
-        run: |
-          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
-
-          PACKAGES=""
-          while IFS= read -r pkg; do
-            PKG_DIR=$(dirname "$pkg")
-            PKG_NAME=$(node -p "require('./$pkg').name" 2>/dev/null || echo "")
-            if [ -z "$PKG_NAME" ]; then continue; fi
-
-            if echo "$CHANGED_FILES" | grep -q "^$PKG_DIR/"; then
-              PACKAGES="$PACKAGES $PKG_NAME"
-            fi
-          done < <(find packages apps -name package.json -not -path "./node_modules/*" 2>/dev/null)
-
-          PACKAGES=$(echo "$PACKAGES" | xargs)
-          echo "packages=$PACKAGES" >> $GITHUB_OUTPUT
-          echo "🔍 변경된 패키지: $PACKAGES"
-
-      - name: Analyze commits and determine version bump
-        if: steps.check-hotfix.outputs.is_hotfix == 'true' && steps.detect-packages.outputs.packages != ''
-        id: analyze-commits
-        run: |
-          COMMITS=$(git log --format=%s HEAD~1..HEAD)
-
-          BUMP_TYPE="patch"
-          if echo "$COMMITS" | grep -qiE "^(feat|feature)(\(.+\))?!?:"; then
-            BUMP_TYPE="minor"
-            echo "⚠️ Hotfix에 minor 변경 감지됨"
-          fi
-          if echo "$COMMITS" | grep -qiE "^(BREAKING CHANGE|.*!:)"; then
-            BUMP_TYPE="major"
-            echo "⚠️ Hotfix에 major 변경 감지됨"
-          fi
-
-          echo "bump_type=$BUMP_TYPE" >> $GITHUB_OUTPUT
-          echo "📊 버전 범프 타입: $BUMP_TYPE"
-
-      - name: Generate changeset
-        if: steps.check-hotfix.outputs.is_hotfix == 'true' && steps.detect-packages.outputs.packages != ''
-        run: |
-          BUMP_TYPE="${{ steps.analyze-commits.outputs.bump_type }}"
-          PACKAGES="${{ steps.detect-packages.outputs.packages }}"
-          HOTFIX_BRANCH="${{ steps.check-hotfix.outputs.hotfix_branch }}"
-
-          CHANGESET_ID=$(date +%s)
-          CHANGESET_FILE=".changeset/hotfix-${CHANGESET_ID}.md"
-
-          echo "---" > $CHANGESET_FILE
-          for pkg in $PACKAGES; do
-            echo "\"$pkg\": $BUMP_TYPE" >> $CHANGESET_FILE
-          done
-          echo "---" >> $CHANGESET_FILE
-          echo "" >> $CHANGESET_FILE
-          echo "🚨 Hotfix from \`$HOTFIX_BRANCH\`" >> $CHANGESET_FILE
-
-          cat $CHANGESET_FILE
-          echo "✅ Changeset 생성 완료: $CHANGESET_FILE"
-
-      - name: Run changeset version
-        if: steps.check-hotfix.outputs.is_hotfix == 'true' && steps.detect-packages.outputs.packages != ''
-        run: |
-          pnpm changeset version
-          echo "✅ Hotfix 버전 업데이트 완료"
-
-      - name: Build packages
-        if: steps.check-hotfix.outputs.is_hotfix == 'true' && steps.detect-packages.outputs.packages != ''
-        run: pnpm build
-
-      - name: Commit hotfix version updates
-        if: steps.check-hotfix.outputs.is_hotfix == 'true' && steps.detect-packages.outputs.packages != ''
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          git add .
-          git commit -m "chore(hotfix): version packages" || echo "커밋할 변경사항 없음"
-          git push origin main
-
-          echo "✅ Hotfix 버전 업데이트를 main에 커밋함"
-
       - name: Create tags and GitHub Releases
-        if: steps.check-hotfix.outputs.is_hotfix == 'true' && steps.detect-packages.outputs.packages != ''
+        if: steps.check-hotfix.outputs.is_hotfix == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "📦 Hotfix 태그 생성 중..."
+          echo ""
+          echo "ℹ️  버전 업데이트는 git-flow hook에서 이미 완료되었습니다"
+          echo ""
 
+          # 모든 package.json 파일을 찾아서 태그 생성
           for pkg_json in packages/*/package.json apps/*/package.json; do
-            if [ -f "$pkg_json" ]; then
-              PKG_NAME=$(node -p "require('./$pkg_json').name" 2>/dev/null || echo "")
-              if [ -z "$PKG_NAME" ]; then continue; fi
+            if [ ! -f "$pkg_json" ]; then continue; fi
 
-              PKG_VERSION=$(node -p "require('./$pkg_json').version" 2>/dev/null || echo "")
-              if [ -z "$PKG_VERSION" ]; then continue; fi
+            PKG_NAME=$(node -p "require('./$pkg_json').name" 2>/dev/null || echo "")
+            if [ -z "$PKG_NAME" ]; then continue; fi
 
-              TAG_NAME="${PKG_NAME}@${PKG_VERSION}"
+            PKG_VERSION=$(node -p "require('./$pkg_json').version" 2>/dev/null || echo "")
+            if [ -z "$PKG_VERSION" ]; then continue; fi
 
-              if ! git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
-                echo "📦 Hotfix 태그 생성: $TAG_NAME"
-                git tag "$TAG_NAME"
-                git push origin "$TAG_NAME"
+            TAG_NAME="${PKG_NAME}@${PKG_VERSION}"
 
-                CHANGELOG_PATH="${pkg_json%package.json}CHANGELOG.md"
-                if [ -f "$CHANGELOG_PATH" ]; then
-                  RELEASE_NOTES=$(awk "/## $PKG_VERSION/,/## [0-9]/" "$CHANGELOG_PATH" | sed '1d;$d')
+            # 태그가 이미 존재하는지 확인
+            if ! git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+              echo "📦 Hotfix 태그 생성: $TAG_NAME"
+              git tag "$TAG_NAME"
+              git push origin "$TAG_NAME"
 
-                  if [ -n "$RELEASE_NOTES" ]; then
-                    gh release create "$TAG_NAME" \
-                      --title "$TAG_NAME (Hotfix)" \
-                      --notes "$RELEASE_NOTES" || echo "⚠️ Release 생성 실패: $TAG_NAME"
-                  else
-                    gh release create "$TAG_NAME" \
-                      --title "$TAG_NAME (Hotfix)" \
-                      --notes "Hotfix Release $TAG_NAME" || echo "⚠️ Release 생성 실패: $TAG_NAME"
-                  fi
+              # Github Release 생성
+              CHANGELOG_PATH="${pkg_json%package.json}CHANGELOG.md"
+              if [ -f "$CHANGELOG_PATH" ]; then
+                RELEASE_NOTES=$(awk "/## $PKG_VERSION/,/## [0-9]/" "$CHANGELOG_PATH" | sed '1d;$d')
+
+                if [ -n "$RELEASE_NOTES" ]; then
+                  gh release create "$TAG_NAME" \
+                    --title "$TAG_NAME (Hotfix)" \
+                    --notes "$RELEASE_NOTES" || echo "⚠️ Release 생성 실패: $TAG_NAME"
                 else
                   gh release create "$TAG_NAME" \
                     --title "$TAG_NAME (Hotfix)" \
                     --notes "Hotfix Release $TAG_NAME" || echo "⚠️ Release 생성 실패: $TAG_NAME"
                 fi
-
-                echo "✅ Hotfix 태그 및 릴리즈 생성 완료: $TAG_NAME"
               else
-                echo "✅ 태그 $TAG_NAME 이미 존재함, 스킵"
+                gh release create "$TAG_NAME" \
+                  --title "$TAG_NAME (Hotfix)" \
+                  --notes "Hotfix Release $TAG_NAME" || echo "⚠️ Release 생성 실패: $TAG_NAME"
               fi
+
+              echo "✅ Hotfix 태그 및 릴리즈 생성 완료: $TAG_NAME"
+              echo ""
+            else
+              echo "✅ 태그 $TAG_NAME 이미 존재함, 스킵"
+              echo ""
             fi
           done
 
           echo "✅ Hotfix 릴리즈 배포 완료"
-
-      - name: Sync version updates to develop
-        if: steps.check-hotfix.outputs.is_hotfix == 'true' && steps.detect-packages.outputs.packages != ''
-        run: |
-          echo "🔄 Develop 브랜치에 버전 업데이트 반영 중..."
-
-          git fetch origin develop
-          git checkout develop
-
-          # Main의 hotfix 버전 업데이트를 develop에 병합
-          git merge origin/main -m "chore(hotfix): version packages"
-
-          git push origin develop
-
-          echo "✅ Develop 브랜치에 hotfix 버전 업데이트 반영 완료"

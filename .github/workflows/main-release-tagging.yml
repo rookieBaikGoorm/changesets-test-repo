@@ -19,31 +19,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-
-      - name: Get pnpm store directory
-        shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
-
-      - name: Setup pnpm cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --prefer-offline
 
       - name: Check if release branch merge
         id: check-release
@@ -58,89 +38,60 @@ jobs:
             echo "ℹ️ Release 병합이 아님, 스킵"
           fi
 
-      - name: Check for changesets
-        if: steps.check-release.outputs.is_release == 'true'
-        id: check-changesets
-        run: |
-          if [ -n "$(ls .changeset/*.md 2>/dev/null | grep -v README.md)" ]; then
-            echo "has_changeset=true" >> $GITHUB_OUTPUT
-            echo "✅ Changeset 발견, 버전 업데이트 진행"
-          else
-            echo "has_changeset=false" >> $GITHUB_OUTPUT
-            echo "⚠️ Changeset 없음"
-          fi
-
-      - name: Run changeset version
-        if: steps.check-release.outputs.is_release == 'true' && steps.check-changesets.outputs.has_changeset == 'true'
-        run: |
-          pnpm changeset version
-          echo "✅ 버전 업데이트 완료"
-
-      - name: Build packages
-        if: steps.check-release.outputs.is_release == 'true' && steps.check-changesets.outputs.has_changeset == 'true'
-        run: pnpm build
-
-      - name: Commit version updates
-        if: steps.check-release.outputs.is_release == 'true' && steps.check-changesets.outputs.has_changeset == 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          git add .
-          git commit -m "chore(release): version packages" || echo "커밋할 변경사항 없음"
-          git push origin main
-
-          echo "✅ 버전 업데이트를 main에 커밋함"
-
       - name: Create tags and GitHub Releases
-        if: steps.check-release.outputs.is_release == 'true' && steps.check-changesets.outputs.has_changeset == 'true'
+        if: steps.check-release.outputs.is_release == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "📦 업데이트된 패키지들의 태그 생성 중..."
+          echo ""
+          echo "ℹ️  버전 업데이트는 git-flow hook에서 이미 완료되었습니다"
+          echo ""
 
           # 모든 package.json 파일을 찾아서 태그 생성
           for pkg_json in packages/*/package.json apps/*/package.json; do
-            if [ -f "$pkg_json" ]; then
-              PKG_NAME=$(node -p "require('./$pkg_json').name" 2>/dev/null || echo "")
-              if [ -z "$PKG_NAME" ]; then continue; fi
+            if [ ! -f "$pkg_json" ]; then continue; fi
 
-              PKG_VERSION=$(node -p "require('./$pkg_json').version" 2>/dev/null || echo "")
-              if [ -z "$PKG_VERSION" ]; then continue; fi
+            PKG_NAME=$(node -p "require('./$pkg_json').name" 2>/dev/null || echo "")
+            if [ -z "$PKG_NAME" ]; then continue; fi
 
-              TAG_NAME="${PKG_NAME}@${PKG_VERSION}"
+            PKG_VERSION=$(node -p "require('./$pkg_json').version" 2>/dev/null || echo "")
+            if [ -z "$PKG_VERSION" ]; then continue; fi
 
-              # 태그가 이미 존재하는지 확인
-              if ! git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
-                echo "📦 태그 생성: $TAG_NAME"
-                git tag "$TAG_NAME"
-                git push origin "$TAG_NAME"
+            TAG_NAME="${PKG_NAME}@${PKG_VERSION}"
 
-                # Github Release 생성
-                CHANGELOG_PATH="${pkg_json%package.json}CHANGELOG.md"
-                if [ -f "$CHANGELOG_PATH" ]; then
-                  # 해당 버전의 changelog 추출
-                  RELEASE_NOTES=$(awk "/## $PKG_VERSION/,/## [0-9]/" "$CHANGELOG_PATH" | sed '1d;$d')
+            # 태그가 이미 존재하는지 확인
+            if ! git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+              echo "📦 태그 생성: $TAG_NAME"
+              git tag "$TAG_NAME"
+              git push origin "$TAG_NAME"
 
-                  if [ -n "$RELEASE_NOTES" ]; then
-                    gh release create "$TAG_NAME" \
-                      --title "$TAG_NAME" \
-                      --notes "$RELEASE_NOTES" || echo "⚠️ Release 생성 실패: $TAG_NAME"
-                  else
-                    gh release create "$TAG_NAME" \
-                      --title "$TAG_NAME" \
-                      --notes "Release $TAG_NAME" || echo "⚠️ Release 생성 실패: $TAG_NAME"
-                  fi
+              # Github Release 생성
+              CHANGELOG_PATH="${pkg_json%package.json}CHANGELOG.md"
+              if [ -f "$CHANGELOG_PATH" ]; then
+                # 해당 버전의 changelog 추출
+                RELEASE_NOTES=$(awk "/## $PKG_VERSION/,/## [0-9]/" "$CHANGELOG_PATH" | sed '1d;$d')
+
+                if [ -n "$RELEASE_NOTES" ]; then
+                  gh release create "$TAG_NAME" \
+                    --title "$TAG_NAME" \
+                    --notes "$RELEASE_NOTES" || echo "⚠️ Release 생성 실패: $TAG_NAME"
                 else
                   gh release create "$TAG_NAME" \
                     --title "$TAG_NAME" \
                     --notes "Release $TAG_NAME" || echo "⚠️ Release 생성 실패: $TAG_NAME"
                 fi
-
-                echo "✅ 태그 및 릴리즈 생성 완료: $TAG_NAME"
               else
-                echo "✅ 태그 $TAG_NAME 이미 존재함, 스킵"
+                gh release create "$TAG_NAME" \
+                  --title "$TAG_NAME" \
+                  --notes "Release $TAG_NAME" || echo "⚠️ Release 생성 실패: $TAG_NAME"
               fi
+
+              echo "✅ 태그 및 릴리즈 생성 완료: $TAG_NAME"
+              echo ""
+            else
+              echo "✅ 태그 $TAG_NAME 이미 존재함, 스킵"
+              echo ""
             fi
           done
 
