@@ -74,16 +74,10 @@ jobs:
             VERSION="${{ github.ref_name }}"
             VERSION="${VERSION#release/}"
 
-            gh pr create \
-              --base main \
-              --head ${{ github.ref_name }} \
-              --title "chore(release): $VERSION" \
-              --body "$(cat <<'EOF'
-## Release $VERSION
+            # Create PR body
+            PR_BODY="## Release ${VERSION}
 
-This PR contains version updates for the following packages:
-
-$(git log --oneline --pretty=format:"- %s" origin/main..HEAD | grep -E "(feat|fix|chore|docs|style|refactor|perf|test)")
+This PR contains version updates from the release branch.
 
 ### Changes
 - Version numbers updated via changesets
@@ -92,11 +86,14 @@ $(git log --oneline --pretty=format:"- %s" origin/main..HEAD | grep -E "(feat|fi
 
 ### Post-Merge Actions
 - Github Release tags will be automatically created
-- Merge this release branch back to develop to sync versions
+- Merge this release branch back to develop to sync versions"
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-EOF
-)"
+            gh pr create \
+              --base main \
+              --head ${{ github.ref_name }} \
+              --title "chore(release): ${VERSION}" \
+              --body "$PR_BODY"
+
             echo "✅ PR created successfully"
           else
             echo "✅ PR already exists: #$EXISTING_PR"
