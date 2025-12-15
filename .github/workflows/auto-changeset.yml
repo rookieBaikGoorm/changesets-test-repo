@@ -107,7 +107,7 @@ jobs:
 
           cat $CHANGESET_FILE
 
-      - name: Commit and push changeset
+      - name: Commit and push changeset to develop
         if: steps.check-changesets.outputs.has_changeset == 'false' && steps.detect-packages.outputs.packages != ''
         run: |
           git config user.name "github-actions[bot]"
@@ -116,3 +116,11 @@ jobs:
           git add .changeset/
           git commit -m "chore: auto-generate changeset for PR #${{ github.event.pull_request.number }}"
           git push origin develop
+
+      - name: Merge develop to main
+        if: steps.check-changesets.outputs.has_changeset == 'false' && steps.detect-packages.outputs.packages != ''
+        run: |
+          git fetch origin main
+          git checkout main
+          git merge origin/develop --no-ff -m "chore(release): merge develop to main (auto-generated changeset)"
+          git push origin main
