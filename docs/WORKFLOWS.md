@@ -414,46 +414,93 @@ After:
 
 #### 6. Main PR 생성 & Auto-merge
 
+이 단계는 가장 중요한 부분으로, **상세한 한국어 릴리즈 노트**를 포함한 PR을 생성합니다.
+
+**핵심 로직**:
 ```yaml
-- name: Create PR to main
-  if: steps.check-version.outputs.already_versioned == 'false'
-  env:
-    GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  run: |
-    # Check if PR already exists
-    EXISTING_PR=$(gh pr list --base main --head ${{ github.ref_name }} --json number --jq '.[0].number')
+# 1. PR body 생성 (pr_body.md)
+echo "## 📦 버전 변경 사항" > pr_body.md
 
-    if [ -z "$EXISTING_PR" ]; then
-      VERSION="${{ github.ref_name }}"
-      VERSION="${VERSION#release/}"
+# 2. 각 패키지의 버전 변경 추출
+for pkg_json in packages/*/package.json apps/*/package.json; do
+  OLD_VERSION=$(git show HEAD~1:$pkg_json | node -p "...")
+  NEW_VERSION=$(node -p "require('./$pkg_json').version")
 
-      # Create PR
-      PR_URL=$(gh pr create \
-        --base main \
-        --head ${{ github.ref_name }} \
-        --title "chore(release): ${VERSION}" \
-        --body "Release ${VERSION} - Version updates from changesets. Github Release tags will be created after merge.")
+  if [ "$OLD_VERSION" != "$NEW_VERSION" ]; then
+    echo "- **$PKG_NAME**: \`$OLD_VERSION\` → \`$NEW_VERSION\`" >> pr_body.md
+  fi
+done
 
-      echo "✅ PR created: $PR_URL"
+# 3. CHANGELOG에서 변경 내역 추출
+for changelog in packages/*/CHANGELOG.md; do
+  CHANGES=$(awk "/^## $PKG_VERSION/{flag=1; next} /^## [0-9]/{flag=0} flag" "$changelog")
+  echo "### $PKG_NAME" >> pr_body.md
+  echo "$CHANGES" >> pr_body.md
+done
 
-      # Enable auto-merge
-      PR_NUMBER=$(echo "$PR_URL" | grep -o '[0-9]\+$')
-      gh pr merge $PR_NUMBER --auto --squash
-      echo "✅ Auto-merge enabled for PR #$PR_NUMBER"
-    else
-      echo "✅ PR already exists: #$EXISTING_PR"
-    fi
+# 4. PR 생성 및 Auto-merge
+gh pr create --body-file pr_body.md
+gh pr merge $PR_NUMBER --auto --squash
+```
+
+**생성되는 PR Body 예시**:
+
+```markdown
+## 📦 버전 변경 사항
+
+- **@repo/hooks**: `0.3.0` → `0.4.0`
+- **@repo/ui**: `0.2.1` → `0.2.2`
+- **web**: `0.0.7` → `0.0.8`
+
+## 📝 포함된 변경사항
+
+### @repo/hooks
+
+#### Minor Changes
+
+- feat(hooks): add useDebounce hook (#42)
+
+#### Patch Changes
+
+- fix(hooks): fix memory leak in useEffect (#43)
+
+### @repo/ui
+
+#### Patch Changes
+
+- fix(ui): fix Button disabled state (#44)
+
+### web
+
+#### Patch Changes
+
+- Updated dependencies
+  - @repo/hooks@0.4.0
+
+---
+
+**병합 후 자동 처리:**
+- ✅ Github Release 태그 자동 생성
+- ✅ CHANGELOG 파일 업데이트 완료
+- ⚠️  `develop` 브랜치로 백포트 필요
 ```
 
 **PR 생성 로직**:
 1. 기존 PR 존재 여부 확인 (중복 방지)
 2. 브랜치명에서 버전 추출 (`release/v1.0.0` → `v1.0.0`)
-3. `gh pr create`로 PR 생성
-4. `gh pr merge --auto`로 auto-merge 활성화
+3. **상세한 릴리즈 노트 생성** (버전 변경 + CHANGELOG)
+4. `gh pr create --body-file`로 PR 생성
+5. `gh pr merge --auto`로 auto-merge 활성화
 
 **Auto-merge**:
 - 모든 status checks가 통과하면 자동으로 squash merge
 - Repository 설정에서 "Allow auto-merge" 활성화 필요
+
+**장점**:
+- ✅ 한눈에 무엇이 변경되는지 파악
+- ✅ PR만 봐도 릴리즈 내역 확인 가능
+- ✅ 리뷰어가 파일을 열어보지 않아도 됨
+- ✅ 릴리즈 승인 프로세스에 유용
 
 ### 권한 요구사항
 
