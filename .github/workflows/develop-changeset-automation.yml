@@ -48,12 +48,15 @@ jobs:
       - name: Check for existing changesets
         id: check-changesets
         run: |
-          if [ -n "$(ls .changeset/*.md 2>/dev/null | grep -v README.md)" ]; then
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          CHANGESET_FILE=".changeset/auto-pr-${PR_NUMBER}.md"
+
+          if [ -f "$CHANGESET_FILE" ]; then
             echo "has_changeset=true" >> $GITHUB_OUTPUT
-            echo "✅ Changeset이 이미 존재함"
+            echo "✅ PR #${PR_NUMBER}의 Changeset이 이미 존재함"
           else
             echo "has_changeset=false" >> $GITHUB_OUTPUT
-            echo "⚠️ Changeset 없음, 자동 생성 예정"
+            echo "⚠️ PR #${PR_NUMBER}의 Changeset 없음, 자동 생성 예정"
           fi
 
       - name: Detect changed packages
@@ -104,9 +107,8 @@ jobs:
           BUMP_TYPE="${{ steps.analyze-commits.outputs.bump_type }}"
           PACKAGES="${{ steps.detect-packages.outputs.packages }}"
 
-          # Changeset 파일 생성
-          CHANGESET_ID=$(date +%s)
-          CHANGESET_FILE=".changeset/auto-${CHANGESET_ID}.md"
+          # Changeset 파일 생성 (PR 번호 기반으로 고유성 보장)
+          CHANGESET_FILE=".changeset/auto-pr-${PR_NUMBER}.md"
 
           # Changeset 작성
           echo "---" > $CHANGESET_FILE
