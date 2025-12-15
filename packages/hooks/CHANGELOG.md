@@ -1,5 +1,11 @@
 # @repo/hooks
 
+## 0.2.0
+
+### Minor Changes
+
+- e9bc920: feat(hooks): add setValue method to useCounter hook (#4)
+
 ## 0.1.0
 
 ### Minor Changes
