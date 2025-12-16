@@ -1,5 +1,11 @@
 # web
 
+## 0.1.0
+
+### Minor Changes
+
+- - 새로운 설명 글을 React Application 내 추가
+
 ## 0.0.6
 
 ### Patch Changes
