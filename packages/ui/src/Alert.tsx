@@ -22,6 +22,7 @@ export function Alert({
     <div
       className={`border-l-4 p-4 ${variantStyles[variant]}`}
       role="alert"
+      aria-live="polite"
     >
       <div className="flex items-center justify-between">
         <div>{children}</div>
