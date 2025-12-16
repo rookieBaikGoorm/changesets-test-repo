@@ -60,12 +60,8 @@ jobs:
             TITLE_SUFFIX=""
           fi
 
-          echo ""
-          echo "ℹ️  버전 업데이트는 git-flow hook에서 이미 완료되었습니다"
-          echo ""
-
-          # 모든 package.json 파일을 찾아서 태그 생성
-          for pkg_json in packages/*/package.json apps/*/package.json; do
+          # apps의 package.json 파일을 찾아서 태그 생성 (packages 제외)
+          for pkg_json in apps/*/package.json; do
             if [ ! -f "$pkg_json" ]; then continue; fi
 
             PKG_NAME=$(node -p "require('./$pkg_json').name" 2>/dev/null || echo "")
