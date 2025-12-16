@@ -63,7 +63,7 @@ if [ -z "$CHANGESET_FILES" ]; then
   commits=$(git log $BASE_BRANCH..HEAD --format=%H --reverse)
 
   if [ -z "$commits" ]; then
-    echo -e "${WHITE}   ⎿ 새로운 커밋이 없습니다${RESET}"
+    echo -e "${WHITE}   ⎿ ${RED}✗${RESET}${WHITE} 새로운 커밋이 없습니다${RESET}"
     echo ""
     echo -e "${WHITE}   버전 변경 없이 계속 진행합니다${RESET}"
     exit 0
@@ -140,7 +140,7 @@ if [ -z "$CHANGESET_FILES" ]; then
   # Changeset 파일 생성
   package_count=$(find "$TMP_DIR" -name "*.bump" 2>/dev/null | wc -l)
   if [ "$package_count" -eq 0 ]; then
-    echo "   ⎿ 변경된 패키지가 없습니다${RESET}"
+    echo -e "${WHITE}   ⎿ ${RED}✗${RESET}${WHITE} 변경된 패키지가 없습니다${RESET}"
     echo ""
     echo -e "${WHITE}   버전 변경 없이 계속 진행합니다${RESET}"
     exit 0
