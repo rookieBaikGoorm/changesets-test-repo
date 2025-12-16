@@ -1,5 +1,11 @@
 # @repo/hooks
 
+## 0.5.0
+
+### Minor Changes
+
+- ee8f78e: feat(hooks): add useDebounce hook (#10)
+
 ## 0.4.0
 
 ### Minor Changes
