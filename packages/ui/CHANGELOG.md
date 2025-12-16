@@ -1,5 +1,11 @@
 # @repo/ui
 
+## 0.2.2
+
+### Patch Changes
+
+- Hotfix: hotfix/v0.2.2
+
 ## 0.2.1
 
 ### Patch Changes
