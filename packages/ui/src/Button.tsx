@@ -44,7 +44,11 @@ export const Button: React.FC<ButtonProps> = ({
     <button
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
-      style={{ ...baseStyles, ...variantStyles[variant] }}
+      style={{
+        ...baseStyles,
+        ...variantStyles[variant],
+        pointerEvents: disabled ? 'none' : 'auto'
+      }}
     >
       {children}
     </button>
