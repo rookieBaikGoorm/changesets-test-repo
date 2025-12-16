@@ -1,5 +1,12 @@
 # web
 
+## 0.1.1
+
+### Patch Changes
+
+- Updated dependencies [ee8f78e]
+  - @repo/hooks@0.5.0
+
 ## 0.1.0
 
 ### Minor Changes
