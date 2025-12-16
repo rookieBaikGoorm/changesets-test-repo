@@ -27,6 +27,7 @@ export function Alert({
         <div>{children}</div>
         {onClose && (
           <button
+            type="button"
             onClick={onClose}
             className="ml-4 text-xl font-bold opacity-50 hover:opacity-100"
             aria-label="Close"
