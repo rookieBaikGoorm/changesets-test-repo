@@ -19,6 +19,7 @@ function App() {
         </a>
       </div>
       <h1>Vite + React Monorepo</h1>
+      <p>another experience</p>
       <div className="card">
         <p>Count: {count}</p>
         <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
