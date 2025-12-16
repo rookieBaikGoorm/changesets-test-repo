@@ -79,23 +79,23 @@ if [ -z "$CHANGESET_FILES" ]; then
     description=""
 
     # BREAKING CHANGE 또는 ! 체크 (major)
-    if echo "$msg${RESET}" | grep -qE '!:|BREAKING CHANGE'; then
+    if echo "$msg" | grep -qE '!:|BREAKING CHANGE'; then
       bump_type="major"
-      description=$(echo "$msg${RESET}" | sed -E 's/^[a-z]+(\([^)]+\))?!?: //')
+      description=$(echo "$msg" | sed -E 's/^[a-z]+(\([^)]+\))?!?: //')
     # feat: 체크 (minor)
-    elif echo "$msg${RESET}" | grep -qE '^feat(\([^)]+\))?: '; then
+    elif echo "$msg" | grep -qE '^feat(\([^)]+\))?: '; then
       bump_type="minor"
-      description=$(echo "$msg${RESET}" | sed -E 's/^feat(\([^)]+\))?: //')
+      description=$(echo "$msg" | sed -E 's/^feat(\([^)]+\))?: //')
     # fix: 체크 (patch)
-    elif echo "$msg${RESET}" | grep -qE '^fix(\([^)]+\))?: '; then
+    elif echo "$msg" | grep -qE '^fix(\([^)]+\))?: '; then
       bump_type="patch"
-      description=$(echo "$msg${RESET}" | sed -E 's/^fix(\([^)]+\))?: //')
+      description=$(echo "$msg" | sed -E 's/^fix(\([^)]+\))?: //')
     # 기타 (무시하거나 patch)
-    elif echo "$msg${RESET}" | grep -qE '^(chore|docs|style|refactor|test|perf|ci|build)(\([^)]+\))?: '; then
+    elif echo "$msg" | grep -qE '^(chore|docs|style|refactor|test|perf|ci|build)(\([^)]+\))?: '; then
       continue  # 이런 커밋은 changeset에 포함하지 않음
     else
       # 컨벤션을 따르지 않는 커밋은 patch로 처리
-      description="$msg${RESET}"
+      description="$msg"
     fi
 
     # 변경된 파일 확인
@@ -180,10 +180,10 @@ if [ -z "$CHANGESET_FILES" ]; then
         echo ""
       fi
     done < "$TMP_DIR/packages.txt"
-  } > "$changeset_file${RESET}"
+  } > "$changeset_file"
 
   # 생성된 내용 표시
-  cat "$changeset_file${RESET}" | sed 's/^/      /'
+  cat "$changeset_file" | sed 's/^/      /'
   echo ""
 
   echo -e "${WHITE}      ${GREEN}✓${RESET}${WHITE} Changeset 파일 생성 완료: $changeset_file${RESET}"
