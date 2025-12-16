@@ -1,5 +1,15 @@
 # @repo/ui
 
+## 0.2.0
+
+### Minor Changes
+
+- - add useLocalStorage hook for localStorage sync
+
+  - add Alert component with multiple variants
+
+  - add Settings page with theme and notification preferences
+
 ## 0.1.0
 
 ### Minor Changes
