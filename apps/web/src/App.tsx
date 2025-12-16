@@ -5,9 +5,10 @@ import './App.css'
 import { Button } from '@repo/ui'
 import { useCounter, useToggle } from '@repo/hooks'
 import { About } from './pages/About'
+import { Settings } from './pages/Settings'
 
 function App() {
-  const [currentPage, setCurrentPage] = useState<'home' | 'about'>('home')
+  const [currentPage, setCurrentPage] = useState<'home' | 'about' | 'settings'>('home')
   const { count, increment, decrement, reset } = useCounter(0)
   const { value: showDetails, toggle } = useToggle(false)
 
@@ -18,6 +19,17 @@ function App() {
           Back to Home
         </Button>
         <About />
+      </div>
+    )
+  }
+
+  if (currentPage === 'settings') {
+    return (
+      <div>
+        <Button onClick={() => setCurrentPage('home')} style={{ margin: '20px' }}>
+          Back to Home
+        </Button>
+        <Settings />
       </div>
     )
   }
@@ -62,9 +74,12 @@ function App() {
       <p className="read-the-docs">
         Testing monorepo with changesets
       </p>
-      <div style={{ marginTop: '20px' }}>
+      <div style={{ marginTop: '20px', display: 'flex', gap: '10px', justifyContent: 'center' }}>
         <Button onClick={() => setCurrentPage('about')} variant="secondary">
-          Go to About Page
+          Go to About
+        </Button>
+        <Button onClick={() => setCurrentPage('settings')} variant="secondary">
+          Go to Settings
         </Button>
       </div>
     </>
