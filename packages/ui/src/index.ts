@@ -3,3 +3,4 @@ export { Card } from './Card';
 export { Badge } from './Badge';
 export { Alert } from './Alert';
 export { Table } from './Table';
+export { Input } from './Input';
