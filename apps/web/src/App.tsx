@@ -1,12 +1,26 @@
+import { useState } from 'react'
 import reactLogo from './assets/react.svg'
 import viteLogo from '/vite.svg'
 import './App.css'
 import { Button } from '@repo/ui'
 import { useCounter, useToggle } from '@repo/hooks'
+import { About } from './pages/About'
 
 function App() {
+  const [currentPage, setCurrentPage] = useState<'home' | 'about'>('home')
   const { count, increment, decrement, reset } = useCounter(0)
   const { value: showDetails, toggle } = useToggle(false)
+
+  if (currentPage === 'about') {
+    return (
+      <div>
+        <Button onClick={() => setCurrentPage('home')} style={{ margin: '20px' }}>
+          Back to Home
+        </Button>
+        <About />
+      </div>
+    )
+  }
 
   return (
     <>
@@ -48,6 +62,11 @@ function App() {
       <p className="read-the-docs">
         Testing monorepo with changesets
       </p>
+      <div style={{ marginTop: '20px' }}>
+        <Button onClick={() => setCurrentPage('about')} variant="secondary">
+          Go to About Page
+        </Button>
+      </div>
     </>
   )
 }
