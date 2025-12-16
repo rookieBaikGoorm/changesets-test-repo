@@ -5,6 +5,7 @@ export interface ButtonProps {
   onClick?: () => void;
   variant?: 'primary' | 'secondary' | 'success';
   disabled?: boolean;
+  loading?: boolean;
 }
 
 export const Button: React.FC<ButtonProps> = ({
@@ -12,7 +13,10 @@ export const Button: React.FC<ButtonProps> = ({
   onClick,
   variant = 'primary',
   disabled = false,
+  loading = false,
 }) => {
+  const isDisabled = disabled || loading;
+
   const baseStyles = {
     padding: '0.6em 1.2em',
     fontSize: '1em',
@@ -20,9 +24,12 @@ export const Button: React.FC<ButtonProps> = ({
     fontFamily: 'inherit',
     borderRadius: '8px',
     border: '1px solid transparent',
-    cursor: disabled ? 'not-allowed' : 'pointer',
+    cursor: isDisabled ? 'not-allowed' : 'pointer',
     transition: 'border-color 0.25s',
-    opacity: disabled ? 0.5 : 1,
+    opacity: isDisabled ? 0.5 : 1,
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '0.5em',
   };
 
   const variantStyles = {
@@ -42,14 +49,27 @@ export const Button: React.FC<ButtonProps> = ({
 
   return (
     <button
-      onClick={disabled ? undefined : onClick}
-      disabled={disabled}
+      onClick={isDisabled ? undefined : onClick}
+      disabled={isDisabled}
       style={{
         ...baseStyles,
         ...variantStyles[variant],
-        pointerEvents: disabled ? 'none' : 'auto'
+        pointerEvents: isDisabled ? 'none' : 'auto'
       }}
     >
+      {loading && (
+        <span
+          style={{
+            display: 'inline-block',
+            width: '1em',
+            height: '1em',
+            border: '2px solid currentColor',
+            borderTopColor: 'transparent',
+            borderRadius: '50%',
+            animation: 'spin 0.6s linear infinite',
+          }}
+        />
+      )}
       {children}
     </button>
   );

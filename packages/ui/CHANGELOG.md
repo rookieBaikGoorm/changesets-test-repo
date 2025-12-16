@@ -1,5 +1,13 @@
 # @repo/ui
 
+## 0.3.0
+
+### Minor Changes
+
+- - add Table component with striped and hoverable options
+  - add loading state to Button component
+  - add Input component with label, error, and helper text support
+
 ## 0.2.2
 
 ### Patch Changes
