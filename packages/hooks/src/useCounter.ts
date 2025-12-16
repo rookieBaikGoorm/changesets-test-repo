@@ -26,10 +26,18 @@ export function useCounter(initialValue = 0): UseCounterReturn {
   }, [initialValue]);
 
   const incrementBy = useCallback((amount: number) => {
+    if (amount < 0) {
+      console.warn('incrementBy expects a positive number');
+      return;
+    }
     setCount((prev) => prev + amount);
   }, []);
 
   const decrementBy = useCallback((amount: number) => {
+    if (amount < 0) {
+      console.warn('decrementBy expects a positive number');
+      return;
+    }
     setCount((prev) => prev - amount);
   }, []);
 
