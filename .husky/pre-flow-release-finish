@@ -9,6 +9,7 @@
 set -e
 
 # 색상 정의
+WHITE='\033[37m'
 RED='\033[31m'
 GREEN='\033[32m'
 RESET='\033[0m'
@@ -22,26 +23,26 @@ if [[ ! $BRANCH =~ ^release/ ]]; then
 fi
 
 echo ""
-echo "Git Flow Release Hook 실행"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo -e "${WHITE}Git Flow Release Hook 실행${RESET}"
+echo -e "${WHITE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo ""
 
 # Changeset 파일 확인
 CHANGESET_FILES=$(ls .changeset/*.md 2>/dev/null | grep -v README.md || echo "")
 
 if [ -z "$CHANGESET_FILES" ]; then
-  echo "1️⃣ Changeset 파일이 없습니다"
+  echo -e "${WHITE}1️⃣ Changeset 파일이 없습니다.${RESET}"
   echo ""
-  echo "   Git Commit 분석 및 Changeset 자동 생성 중..."
+  echo -e "${WHITE}   Git Commit 분석 및 Changeset 자동 생성 중...${RESET}"
 
   # 베이스 브랜치 찾기 (release 브랜치는 main과 비교)
   BASE_BRANCH="main"
   if ! git rev-parse --verify main >/dev/null 2>&1; then
-    echo -e "   ⎿ ${RED}✗${RESET} main 브랜치를 찾을 수 없습니다"
+    echo -e "   ⎿ ${RED}✗${RESET}${WHITE} main 브랜치를 찾을 수 없습니다${RESET}"
     exit 1
   fi
 
-  echo "   ⎿ 베이스 브랜치: $BASE_BRANCH"
+  echo -e "${WHITE}   ⎿ 베이스 브랜치: $BASE_BRANCH${RESET}"
   echo ""
 
   # 임시 디렉토리 생성 (데이터 저장용)
@@ -62,39 +63,39 @@ if [ -z "$CHANGESET_FILES" ]; then
   commits=$(git log $BASE_BRANCH..HEAD --format=%H --reverse)
 
   if [ -z "$commits" ]; then
-    echo "   ⎿ 새로운 커밋이 없습니다"
+    echo -e "${WHITE}   ⎿ ${RED}✗${RESET}${WHITE} 새로운 커밋이 없습니다${RESET}"
     echo ""
-    echo "   버전 변경 없이 계속 진행합니다"
+    echo -e "${WHITE}   버전 변경 없이 계속 진행합니다${RESET}"
     exit 0
   fi
 
-  echo "   ⎿ 분석 중인 커밋:"
+  echo -e "${WHITE}   ⎿ 분석 중인 커밋:${RESET}"
   for commit in $commits; do
     msg=$(git log -1 --format=%s $commit)
-    echo "      • $msg"
+    echo -e "${WHITE}      • $msg${RESET}"
 
     # Conventional Commits 파싱
     bump_type="patch"
     description=""
 
     # BREAKING CHANGE 또는 ! 체크 (major)
-    if echo "$msg" | grep -qE '!:|BREAKING CHANGE'; then
+    if echo "$msg${RESET}" | grep -qE '!:|BREAKING CHANGE'; then
       bump_type="major"
-      description=$(echo "$msg" | sed -E 's/^[a-z]+(\([^)]+\))?!?: //')
+      description=$(echo "$msg${RESET}" | sed -E 's/^[a-z]+(\([^)]+\))?!?: //')
     # feat: 체크 (minor)
-    elif echo "$msg" | grep -qE '^feat(\([^)]+\))?: '; then
+    elif echo "$msg${RESET}" | grep -qE '^feat(\([^)]+\))?: '; then
       bump_type="minor"
-      description=$(echo "$msg" | sed -E 's/^feat(\([^)]+\))?: //')
+      description=$(echo "$msg${RESET}" | sed -E 's/^feat(\([^)]+\))?: //')
     # fix: 체크 (patch)
-    elif echo "$msg" | grep -qE '^fix(\([^)]+\))?: '; then
+    elif echo "$msg${RESET}" | grep -qE '^fix(\([^)]+\))?: '; then
       bump_type="patch"
-      description=$(echo "$msg" | sed -E 's/^fix(\([^)]+\))?: //')
+      description=$(echo "$msg${RESET}" | sed -E 's/^fix(\([^)]+\))?: //')
     # 기타 (무시하거나 patch)
-    elif echo "$msg" | grep -qE '^(chore|docs|style|refactor|test|perf|ci|build)(\([^)]+\))?: '; then
+    elif echo "$msg${RESET}" | grep -qE '^(chore|docs|style|refactor|test|perf|ci|build)(\([^)]+\))?: '; then
       continue  # 이런 커밋은 changeset에 포함하지 않음
     else
       # 컨벤션을 따르지 않는 커밋은 patch로 처리
-      description="$msg"
+      description="$msg${RESET}"
     fi
 
     # 변경된 파일 확인
@@ -139,14 +140,14 @@ if [ -z "$CHANGESET_FILES" ]; then
   # Changeset 파일 생성
   package_count=$(find "$TMP_DIR" -name "*.bump" 2>/dev/null | wc -l)
   if [ "$package_count" -eq 0 ]; then
-    echo "   ⎿ 변경된 패키지가 없습니다"
+    echo -e "${WHITE}   ⎿ ${RED}✗${RESET}${WHITE} 변경된 패키지가 없습니다${RESET}"
     echo ""
-    echo "   버전 변경 없이 계속 진행합니다"
+    echo -e "${WHITE}   버전 변경 없이 계속 진행합니다${RESET}"
     exit 0
   fi
 
   echo ""
-  echo "   ⎿ 생성된 Changeset:"
+  echo -e "${WHITE}   ⎿ 생성된 Changeset:${RESET}"
   echo ""
 
   changeset_id="auto-$(date +%s)"
@@ -179,29 +180,29 @@ if [ -z "$CHANGESET_FILES" ]; then
         echo ""
       fi
     done < "$TMP_DIR/packages.txt"
-  } > "$changeset_file"
+  } > "$changeset_file${RESET}"
 
   # 생성된 내용 표시
-  cat "$changeset_file" | sed 's/^/      /'
+  cat "$changeset_file${RESET}" | sed 's/^/      /'
   echo ""
 
-  echo "      ✓ Changeset 파일 생성 완료: $changeset_file"
+  echo -e "${WHITE}      ${GREEN}✓${RESET}${WHITE} Changeset 파일 생성 완료: $changeset_file${RESET}"
   echo ""
 
   # 다시 changeset 파일 확인
   CHANGESET_FILES=$(ls .changeset/*.md 2>/dev/null | grep -v README.md || echo "")
 fi
 
-echo "   발견된 Changeset 파일:"
+echo -e "${WHITE}   발견된 Changeset 파일:${RESET}"
 for file in $CHANGESET_FILES; do
-  echo "   ⎿ $(basename $file)"
+  echo -e "${WHITE}   ⎿ $(basename $file)${RESET}"
 done
 echo ""
 
 # 변경사항이 있는지 확인 (.changeset 파일 제외)
 CHANGES=$(git status --porcelain | grep -v "^.. .changeset/" || true)
 if [ -n "$CHANGES" ]; then
-  echo "경고: 커밋되지 않은 변경사항이 있습니다"
+  echo -e "${WHITE}경고: 커밋되지 않은 변경사항이 있습니다${RESET}"
   echo "$CHANGES" | sed 's/^/   ⎿ /'
   echo ""
   read -p "스태시하고 계속하시겠습니까? (y/N): " -n 1 -r
@@ -216,17 +217,17 @@ if [ -n "$CHANGES" ]; then
 fi
 
 # Changeset version 실행
-echo "2️⃣ 버전 업데이트 실행 중..."
+echo -e "${WHITE}2️⃣ 버전 업데이트 실행 중...${RESET}"
 if ! pnpm changeset version; then
-  echo -e "   ⎿ ${RED}✗${RESET} Changeset version 실패"
+  echo -e "   ⎿ ${RED}✗${RESET}${WHITE} Changeset version 실패${RESET}"
   exit 1
 fi
-echo "   ⎿ ✓ 버전 업데이트 완료"
+echo -e "${WHITE}   ⎿ ${GREEN}✓${RESET}${WHITE} 버전 업데이트 완료${RESET}"
 echo ""
 
 # 변경사항 확인
 if [ -z "$(git status --porcelain)" ]; then
-  echo "   변경사항이 없습니다"
+  echo -e "${WHITE}   변경사항이 없습니다${RESET}"
   if [ "$STASHED" = true ]; then
     git stash pop
   fi
@@ -234,18 +235,18 @@ if [ -z "$(git status --porcelain)" ]; then
 fi
 
 # 업데이트된 내용 표시
-echo "   업데이트된 파일:"
+echo -e "${WHITE}   업데이트된 파일:${RESET}"
 git status --short | sed 's/^/   ⎿ /'
 echo ""
 
 # 커밋
-echo "3️⃣ 변경사항 커밋 중..."
+echo -e "${WHITE}3️⃣ 변경사항 커밋 중...${RESET}"
 git add .
 git commit -m "chore(release): version packages
 
 Auto-generated by git-flow pre-release hook"
 
-echo "   ⎿ ✓ 커밋 완료"
+echo -e "${WHITE}   ⎿ ${GREEN}✓${RESET}${WHITE} 커밋 완료${RESET}"
 echo ""
 
 # Stash 복구
@@ -253,7 +254,7 @@ if [ "$STASHED" = true ]; then
   git stash pop
 fi
 
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo -e "${WHITE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo -e "${GREEN}✓ Release Hook 완료${RESET} - git flow release finish 계속 진행"
 echo ""
 
