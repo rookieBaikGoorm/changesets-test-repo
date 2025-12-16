@@ -22,6 +22,7 @@ export function Table<T extends Record<string, any>>({
   return (
     <div style={{ overflowX: 'auto' }}>
       <table
+        role="table"
         style={{
           width: '100%',
           borderCollapse: 'collapse',

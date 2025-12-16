@@ -10,8 +10,8 @@ export function useDebounce<T>(value: T, delay: number = 500): T {
   const [debouncedValue, setDebouncedValue] = useState<T>(value);
 
   useEffect(() => {
-    // Fix: Handle zero delay case immediately
-    if (delay === 0) {
+    // Fix: Handle zero or negative delay case immediately
+    if (delay <= 0) {
       setDebouncedValue(value);
       return;
     }
