@@ -1,5 +1,11 @@
 # @repo/ui
 
+## 0.4.1
+
+### Patch Changes
+
+- Hotfix: hotfix/v0.4.1
+
 ## 0.4.0
 
 ### Minor Changes

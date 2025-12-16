@@ -1,5 +1,11 @@
 # @repo/hooks
 
+## 0.7.1
+
+### Patch Changes
+
+- Hotfix: hotfix/v0.4.1
+
 ## 0.7.0
 
 ### Minor Changes
