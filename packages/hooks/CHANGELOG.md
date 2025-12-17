@@ -1,5 +1,16 @@
 # @repo/hooks
 
+## 0.9.0
+
+### Minor Changes
+
+- - enhance useDebounce with leading and maxWait options
+  - add useAsync hook for async operation handling
+
+  - add Spinner component for loading states
+  - improve Button accessibility with ARIA attributes
+  - redesign Modal API for better consistency
+
 ## 0.8.0
 
 ### Minor Changes
