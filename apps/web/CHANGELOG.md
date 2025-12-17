@@ -1,5 +1,13 @@
 # web
 
+## 0.3.5
+
+### Patch Changes
+
+- Updated dependencies
+  - @repo/hooks@0.9.0
+  - @repo/ui@1.0.0
+
 ## 0.3.4
 
 ### Patch Changes
