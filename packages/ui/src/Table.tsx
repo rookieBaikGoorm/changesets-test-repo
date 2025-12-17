@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 
 export interface TableColumn<T> {
   key: string;
@@ -11,24 +11,34 @@ export interface TableProps<T> {
   columns: TableColumn<T>[];
   striped?: boolean;
   hoverable?: boolean;
+  /** Optional unique key extractor for row optimization */
+  getRowKey?: (item: T, index: number) => string | number;
 }
 
-export function Table<T extends Record<string, any>>({
+function TableComponent<T extends Record<string, any>>({
   data,
   columns,
   striped = false,
   hoverable = false,
+  getRowKey = (_, index) => index,
 }: TableProps<T>) {
+  // Memoize table styles for performance
+  const tableContainerStyle = useMemo(
+    () => ({ overflowX: 'auto' as const }),
+    []
+  );
+
+  const tableStyle = useMemo(
+    () => ({
+      width: '100%',
+      borderCollapse: 'collapse' as const,
+      fontSize: '0.875rem',
+    }),
+    []
+  );
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table
-        role="table"
-        style={{
-          width: '100%',
-          borderCollapse: 'collapse',
-          fontSize: '0.875rem',
-        }}
-      >
+    <div style={tableContainerStyle}>
+      <table role="table" style={tableStyle}>
         <thead>
           <tr
             style={{
@@ -54,7 +64,7 @@ export function Table<T extends Record<string, any>>({
         <tbody>
           {data.map((item, index) => (
             <tr
-              key={index}
+              key={getRowKey(item, index)}
               style={{
                 borderBottom: '1px solid #e5e7eb',
                 backgroundColor:
@@ -90,3 +100,6 @@ export function Table<T extends Record<string, any>>({
     </div>
   );
 }
+
+// Memoize component to prevent unnecessary re-renders
+export const Table = React.memo(TableComponent) as typeof TableComponent;
