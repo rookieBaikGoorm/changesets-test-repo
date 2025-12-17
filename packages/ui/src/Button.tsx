@@ -6,6 +6,7 @@ export interface ButtonProps {
   variant?: 'primary' | 'secondary' | 'success' | 'danger';
   disabled?: boolean;
   loading?: boolean;
+  'aria-label'?: string;
 }
 
 export const Button: React.FC<ButtonProps> = ({
@@ -14,6 +15,7 @@ export const Button: React.FC<ButtonProps> = ({
   variant = 'primary',
   disabled = false,
   loading = false,
+  'aria-label': ariaLabel,
 }) => {
   const isDisabled = disabled || loading;
 
@@ -51,6 +53,9 @@ export const Button: React.FC<ButtonProps> = ({
     <button
       onClick={isDisabled ? undefined : onClick}
       disabled={isDisabled}
+      aria-label={ariaLabel}
+      aria-busy={loading}
+      aria-disabled={isDisabled}
       style={{
         ...baseStyles,
         ...variantStyles[variant],
