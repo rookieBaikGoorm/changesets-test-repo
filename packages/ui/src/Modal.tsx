@@ -1,22 +1,30 @@
 import React, { useEffect } from 'react';
 
 export interface ModalProps {
-  isOpen: boolean;
-  onClose: () => void;
+  /** Whether the modal is open (renamed from isOpen for consistency) */
+  open: boolean;
+  /** Callback when modal requests to close */
+  onClose?: () => void;
+  /** Modal title */
   title?: string;
+  /** Modal content */
   children: React.ReactNode;
+  /** Modal size variant */
   size?: 'sm' | 'md' | 'lg' | 'xl';
+  /** Whether clicking backdrop closes modal (default: true) */
+  closeOnBackdrop?: boolean;
 }
 
 export const Modal: React.FC<ModalProps> = ({
-  isOpen,
+  open,
   onClose,
   title,
   children,
   size = 'md',
+  closeOnBackdrop = true,
 }) => {
   useEffect(() => {
-    if (isOpen) {
+    if (open) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = 'unset';
@@ -25,20 +33,26 @@ export const Modal: React.FC<ModalProps> = ({
     return () => {
       document.body.style.overflow = 'unset';
     };
-  }, [isOpen]);
+  }, [open]);
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
+      if (e.key === 'Escape' && open && onClose) {
         onClose();
       }
     };
 
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, [isOpen, onClose]);
+  }, [open, onClose]);
 
-  if (!isOpen) return null;
+  if (!open) return null;
+
+  const handleBackdropClick = () => {
+    if (closeOnBackdrop && onClose) {
+      onClose();
+    }
+  };
 
   const sizeStyles = {
     sm: { maxWidth: '400px' },
@@ -62,7 +76,7 @@ export const Modal: React.FC<ModalProps> = ({
         zIndex: 1000,
         padding: '1rem',
       }}
-      onClick={onClose}
+      onClick={handleBackdropClick}
       role="dialog"
       aria-modal="true"
       aria-labelledby={title ? 'modal-title' : undefined}
