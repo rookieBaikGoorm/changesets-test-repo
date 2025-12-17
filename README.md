@@ -137,8 +137,33 @@ git flow hotfix finish -Fpn fix-critical-bug
 ✅ 버전 번호 자동 계산 (feat→minor, fix→patch)
 ✅ CHANGELOG 자동 생성
 ✅ Git 태그 & GitHub Release 자동 생성
+✅ **GitHub Release Notes**: 패키지 의존성 변경사항 자동 포함
 
 **개발자는 Conventional Commits만 작성하면 됩니다!**
+
+### GitHub Release Notes 개선
+
+GitHub Release가 생성될 때 다음 정보가 자동으로 포함됩니다:
+
+- 📦 **Main Package Changes**: 직접 변경된 패키지의 CHANGELOG
+- 🔗 **Dependency Changes**: 내부 의존성 패키지의 변경사항 상세 포함
+- 📝 **구조화된 형식**: Markdown 테이블과 섹션으로 가독성 향상
+
+예시:
+```markdown
+## web@0.3.2
+
+### Patch Changes
+- Updated dependencies
+  - @repo/hooks@0.8.0
+  - @repo/ui@0.5.0
+
+### Changes in @repo/ui@0.5.0
+- add Modal component with multiple sizes and keyboard support
+
+### Changes in @repo/hooks@0.8.0
+- add useForm hook with validation and submission handling
+```
 
 자세한 내용은 [docs/DEVELOPER_GUIDE.md](./docs/DEVELOPER_GUIDE.md)를 참조하세요.
 
