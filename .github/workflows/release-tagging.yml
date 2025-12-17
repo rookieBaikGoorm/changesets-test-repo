@@ -80,19 +80,42 @@ jobs:
 
               # Github Release 생성
               CHANGELOG_PATH="${pkg_json%package.json}CHANGELOG.md"
-              if [ -f "$CHANGELOG_PATH" ]; then
-                # 해당 버전의 changelog 추출
-                RELEASE_NOTES=$(awk "/## $PKG_VERSION/,/## [0-9]/" "$CHANGELOG_PATH" | sed '1d;$d')
+              RELEASE_NOTES=""
 
-                if [ -n "$RELEASE_NOTES" ]; then
-                  gh release create "$TAG_NAME" \
-                    --title "${TAG_NAME}${TITLE_SUFFIX}" \
-                    --notes "$RELEASE_NOTES" || echo "⚠️ Release 생성 실패: $TAG_NAME"
-                else
-                  gh release create "$TAG_NAME" \
-                    --title "${TAG_NAME}${TITLE_SUFFIX}" \
-                    --notes "Release $TAG_NAME" || echo "⚠️ Release 생성 실패: $TAG_NAME"
+              if [ -f "$CHANGELOG_PATH" ]; then
+                # 해당 버전의 changelog 추출 (개선된 파싱)
+                RELEASE_NOTES=$(awk "/^## $PKG_VERSION\$/,/^## [0-9]/" "$CHANGELOG_PATH" | sed '1d;$d' | sed '/^$/d')
+
+                # dependency 업데이트 정보 추가
+                if echo "$RELEASE_NOTES" | grep -q "Updated dependencies"; then
+                  # packages의 변경사항도 포함
+                  DEPS_SECTION=$(echo "$RELEASE_NOTES" | awk '/Updated dependencies/,0')
+
+                  # 실제 패키지 변경사항 추가
+                  for dep_pkg in packages/*/package.json; do
+                    if [ ! -f "$dep_pkg" ]; then continue; fi
+                    DEP_NAME=$(node -p "require('./$dep_pkg').name" 2>/dev/null || echo "")
+                    DEP_VERSION=$(node -p "require('./$dep_pkg').version" 2>/dev/null || echo "")
+
+                    if echo "$DEPS_SECTION" | grep -q "$DEP_NAME@$DEP_VERSION"; then
+                      # 해당 패키지의 CHANGELOG에서 변경사항 가져오기
+                      DEP_CHANGELOG="${dep_pkg%package.json}CHANGELOG.md"
+                      if [ -f "$DEP_CHANGELOG" ]; then
+                        DEP_CHANGES=$(awk "/^## $DEP_VERSION\$/,/^## [0-9]/" "$DEP_CHANGELOG" | sed '1d;$d' | grep "^- " | head -5)
+                        if [ -n "$DEP_CHANGES" ]; then
+                          RELEASE_NOTES=$(printf "%s\n\n### Changes in %s@%s\n%s" "$RELEASE_NOTES" "$DEP_NAME" "$DEP_VERSION" "$DEP_CHANGES")
+                        fi
+                      fi
+                    fi
+                  done
                 fi
+              fi
+
+              # Release 생성
+              if [ -n "$RELEASE_NOTES" ]; then
+                gh release create "$TAG_NAME" \
+                  --title "${TAG_NAME}${TITLE_SUFFIX}" \
+                  --notes "$RELEASE_NOTES" || echo "⚠️ Release 생성 실패: $TAG_NAME"
               else
                 gh release create "$TAG_NAME" \
                   --title "${TAG_NAME}${TITLE_SUFFIX}" \
