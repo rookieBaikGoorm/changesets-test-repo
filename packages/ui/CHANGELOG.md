@@ -1,5 +1,16 @@
 # @repo/ui
 
+## 0.5.0
+
+### Minor Changes
+
+- - add useForm hook with validation and submission handling
+
+  - add Table component with striped and hoverable options
+  - add loading state to Button component
+  - add Input component with label, error, and helper text support
+  - add Modal component with multiple sizes and keyboard support
+
 ## 0.4.1
 
 ### Patch Changes
