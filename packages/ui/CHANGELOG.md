@@ -1,5 +1,11 @@
 # @repo/ui
 
+## 0.6.1
+
+### Patch Changes
+
+- Hotfix: hotfix/test-changelog-parsing
+
 ## 0.6.0
 
 ### Minor Changes
