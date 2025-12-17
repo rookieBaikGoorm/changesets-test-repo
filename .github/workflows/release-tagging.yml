@@ -84,7 +84,7 @@ jobs:
 
               if [ -f "$CHANGELOG_PATH" ]; then
                 # 해당 버전의 changelog 추출 (개선된 파싱)
-                RELEASE_NOTES=$(awk "/^## $PKG_VERSION\$/,/^## [0-9]/" "$CHANGELOG_PATH" | sed '1d;$d' | sed '/^$/d')
+                RELEASE_NOTES=$(awk "/^## $PKG_VERSION\$/,/^## /" "$CHANGELOG_PATH" | sed '1d;$d')
 
                 # dependency 업데이트 정보 추가
                 if echo "$RELEASE_NOTES" | grep -q "Updated dependencies"; then
@@ -101,7 +101,7 @@ jobs:
                       # 해당 패키지의 CHANGELOG에서 변경사항 가져오기
                       DEP_CHANGELOG="${dep_pkg%package.json}CHANGELOG.md"
                       if [ -f "$DEP_CHANGELOG" ]; then
-                        DEP_CHANGES=$(awk "/^## $DEP_VERSION\$/,/^## [0-9]/" "$DEP_CHANGELOG" | sed '1d;$d' | grep "^- " | head -5)
+                        DEP_CHANGES=$(awk "/^## $DEP_VERSION\$/,/^## /" "$DEP_CHANGELOG" | sed '1d;$d' | grep "^- " | head -5)
                         if [ -n "$DEP_CHANGES" ]; then
                           RELEASE_NOTES=$(printf "%s\n\n### Changes in %s@%s\n%s" "$RELEASE_NOTES" "$DEP_NAME" "$DEP_VERSION" "$DEP_CHANGES")
                         fi
