@@ -1,5 +1,11 @@
 # @repo/ui
 
+## 0.6.0
+
+### Minor Changes
+
+- - add VERSION export for package version tracking
+
 ## 0.5.0
 
 ### Minor Changes
