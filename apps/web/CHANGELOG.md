@@ -1,5 +1,17 @@
 # web
 
+## 0.4.2
+
+### Minor Changes
+
+- Add Footer component with version info and copyright display
+
+## 0.3.6
+
+### Patch Changes
+
+- Test GitHub changelog integration
+
 ## 0.3.5
 
 ### Patch Changes
