@@ -1,5 +1,11 @@
 # web
 
+## 0.5.0
+
+### Minor Changes
+
+- - add Footer component and configure GitHub changelog
+
 ## 0.4.2
 
 ### Minor Changes
