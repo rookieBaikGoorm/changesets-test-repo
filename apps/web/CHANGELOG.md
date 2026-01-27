@@ -1,5 +1,15 @@
 # web
 
+## 0.6.0
+
+### Minor Changes
+
+- feat: automate version management in release workflow
+
+### Patch Changes
+
+- fix: add test validation file in release branch
+
 ## 0.5.0
 
 ### Minor Changes
