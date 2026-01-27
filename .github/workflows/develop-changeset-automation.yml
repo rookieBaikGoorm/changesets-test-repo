@@ -9,22 +9,21 @@ on:
 jobs:
   auto-changeset:
     name: Generate Changeset for Develop
-    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'feature/')
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -42,168 +41,107 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
 
+      - name: Setup .npmrc for GitHub Packages
+        run: |
+          cat > ~/.npmrc << EOF
+          @goorm-dev:registry=https://npm.pkg.github.com/
+          //npm.pkg.github.com/:_authToken=${{ secrets.GDS_TOKEN }}
+          EOF
+          echo "✅ .npmrc 설정 완료 (GitHub Packages 인증)"
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --prefer-offline
-
-      - name: Print workflow header
-        run: |
-          BLUE='\033[34m'
-          WHITE='\033[37m'
-          RESET='\033[0m'
-
-          echo ""
-          echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-          echo -e "${WHITE}  🤖 Develop Changeset Automation${RESET}"
-          echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-          echo ""
-          echo -e "${WHITE}PR: #${{ github.event.pull_request.number }} - ${{ github.event.pull_request.title }}${RESET}"
-          echo -e "${WHITE}Branch: ${{ github.event.pull_request.head.ref }}${RESET}"
-          echo ""
 
       - name: Check for existing changesets
         id: check-changesets
         run: |
-          GREEN='\033[32m'
-          YELLOW='\033[33m'
-          WHITE='\033[37m'
-          RESET='\033[0m'
-
           PR_NUMBER="${{ github.event.pull_request.number }}"
           CHANGESET_FILE=".changeset/auto-pr-${PR_NUMBER}.md"
 
-          echo "::group::1️⃣ 기존 Changeset 확인"
           if [ -f "$CHANGESET_FILE" ]; then
             echo "has_changeset=true" >> $GITHUB_OUTPUT
-            echo -e "   ⎿ ${GREEN}✓${RESET} PR #${PR_NUMBER}의 Changeset이 이미 존재함"
-            echo -e "   ⎿ 파일: ${CHANGESET_FILE}"
+            echo "✅ Changeset 이미 존재: $CHANGESET_FILE"
           else
             echo "has_changeset=false" >> $GITHUB_OUTPUT
-            echo -e "   ⎿ ${YELLOW}⚠${RESET} PR #${PR_NUMBER}의 Changeset 없음, 자동 생성 예정"
+            echo "ℹ️ Changeset 없음, 자동 생성 예정"
           fi
-          echo "::endgroup::"
 
       - name: Detect changed packages
         if: steps.check-changesets.outputs.has_changeset == 'false'
         id: detect-packages
         run: |
-          GREEN='\033[32m'
-          YELLOW='\033[33m'
-          WHITE='\033[37m'
-          RESET='\033[0m'
+          echo "📦 변경된 패키지 감지 중..."
 
-          echo "::group::2️⃣ 변경된 패키지 감지"
-
-          # PR에서 변경된 파일 목록 가져오기
           CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
-
-          # 변경된 패키지 감지
           PACKAGES=""
+
           while IFS= read -r pkg; do
             PKG_DIR=$(dirname "$pkg")
             PKG_NAME=$(node -p "require('./$pkg').name")
 
             if echo "$CHANGED_FILES" | grep -q "^$PKG_DIR/"; then
               PACKAGES="$PACKAGES $PKG_NAME"
-              echo -e "   ⎿ ${GREEN}✓${RESET} $PKG_NAME"
+              echo "  - $PKG_NAME"
             fi
-          done < <(find packages apps -name package.json)
+          done < <(find packages apps -name package.json 2>/dev/null)
 
           echo "packages=$PACKAGES" >> $GITHUB_OUTPUT
 
           if [ -z "$PACKAGES" ]; then
-            echo -e "   ⎿ ${YELLOW}⚠${RESET} 변경된 패키지 없음"
+            echo "⚠️ 변경된 패키지 없음"
           fi
-
-          echo "::endgroup::"
 
       - name: Analyze commits and determine version bump
         if: steps.check-changesets.outputs.has_changeset == 'false'
         id: analyze-commits
         run: |
-          GREEN='\033[32m'
-          YELLOW='\033[33m'
-          BLUE='\033[34m'
-          RED='\033[31m'
-          WHITE='\033[37m'
-          RESET='\033[0m'
+          echo "🔍 Commit 분석 중..."
 
-          echo "::group::3️⃣ Commit 분석 및 버전 범프 결정"
-
-          # PR의 커밋 메시지 가져오기
           COMMITS=$(git log --format=%s HEAD~1..HEAD)
-
-          echo -e "   ${WHITE}커밋 메시지:${RESET}"
-          echo "$COMMITS" | sed 's/^/      /'
-          echo ""
 
           # 버전 업데이트가 필요없는 커밋 타입 체크
           if echo "$COMMITS" | grep -qE "^(chore|docs|style|test|ci|build)(\(.+\))?:"; then
             echo "should_skip=true" >> $GITHUB_OUTPUT
-            echo -e "   ⎿ ${BLUE}⏭${RESET}  버전 업데이트가 필요없는 커밋 타입"
-            echo -e "   ⎿ 타입: chore/docs/style/test/ci/build"
-            echo "::endgroup::"
+            echo "ℹ️ 버전 업데이트가 필요없는 커밋 타입"
             exit 0
           fi
 
           # Conventional commits 기반 버전 범프 타입 결정
           BUMP_TYPE=""
 
-          # BREAKING CHANGE 또는 ! → major
           if echo "$COMMITS" | grep -qE "^.+!:|BREAKING CHANGE"; then
             BUMP_TYPE="major"
-            echo "::notice::📦 Major 버전 업데이트: BREAKING CHANGE 감지"
-            echo -e "   ⎿ ${RED}📦${RESET} Major 버전 업데이트"
-            echo -e "   ⎿ 사유: BREAKING CHANGE 감지"
-          # feat → minor
+            echo "📦 Major 버전 업데이트 (BREAKING CHANGE)"
           elif echo "$COMMITS" | grep -qE "^feat(\(.+\))?:"; then
             BUMP_TYPE="minor"
-            echo "::notice::✨ Minor 버전 업데이트: 새 기능 추가"
-            echo -e "   ⎿ ${GREEN}✨${RESET} Minor 버전 업데이트"
-            echo -e "   ⎿ 사유: 새 기능 추가 (feat)"
-          # fix → patch
+            echo "✨ Minor 버전 업데이트 (feat)"
           elif echo "$COMMITS" | grep -qE "^fix(\(.+\))?:"; then
             BUMP_TYPE="patch"
-            echo "::notice::🐛 Patch 버전 업데이트: 버그 수정"
-            echo -e "   ⎿ ${GREEN}🐛${RESET} Patch 버전 업데이트"
-            echo -e "   ⎿ 사유: 버그 수정 (fix)"
-          # refactor/perf → patch
+            echo "🐛 Patch 버전 업데이트 (fix)"
           elif echo "$COMMITS" | grep -qE "^(refactor|perf)(\(.+\))?:"; then
             BUMP_TYPE="patch"
-            echo "::notice::♻️ Patch 버전 업데이트: 리팩토링/성능 개선"
-            echo -e "   ⎿ ${GREEN}♻️${RESET}  Patch 버전 업데이트"
-            echo -e "   ⎿ 사유: 리팩토링/성능 개선"
+            echo "♻️ Patch 버전 업데이트 (refactor/perf)"
           else
-            # 컨벤션을 따르지 않는 커밋
             BUMP_TYPE="patch"
-            echo "::warning::⚠️ Conventional Commits를 따르지 않는 커밋 → patch로 처리"
-            echo -e "   ⎿ ${YELLOW}⚠${RESET}  Conventional Commits 미준수"
-            echo -e "   ⎿ 기본값: patch 버전 업데이트"
+            echo "⚠️ Conventional Commits 미준수 → patch"
           fi
 
           echo "should_skip=false" >> $GITHUB_OUTPUT
           echo "bump_type=$BUMP_TYPE" >> $GITHUB_OUTPUT
 
-          echo "::endgroup::"
-
       - name: Generate changeset
         if: steps.check-changesets.outputs.has_changeset == 'false' && steps.detect-packages.outputs.packages != '' && steps.analyze-commits.outputs.should_skip != 'true'
         id: generate-changeset
         run: |
-          GREEN='\033[32m'
-          WHITE='\033[37m'
-          RESET='\033[0m'
-
           PR_TITLE="${{ github.event.pull_request.title }}"
           PR_NUMBER="${{ github.event.pull_request.number }}"
           BUMP_TYPE="${{ steps.analyze-commits.outputs.bump_type }}"
           PACKAGES="${{ steps.detect-packages.outputs.packages }}"
 
-          echo "::group::4️⃣ Changeset 파일 생성"
+          echo "📝 Changeset 파일 생성 중..."
 
-          # Changeset 파일 생성 (PR 번호 기반으로 고유성 보장)
           CHANGESET_FILE=".changeset/auto-pr-${PR_NUMBER}.md"
 
-          # Changeset 작성
           echo "---" > $CHANGESET_FILE
           for pkg in $PACKAGES; do
             echo "\"$pkg\": $BUMP_TYPE" >> $CHANGESET_FILE
@@ -212,92 +150,38 @@ jobs:
           echo "" >> $CHANGESET_FILE
           echo "$PR_TITLE (#$PR_NUMBER)" >> $CHANGESET_FILE
 
-          echo -e "   ${WHITE}생성된 파일: ${CHANGESET_FILE}${RESET}"
-          echo ""
-          echo -e "   ${WHITE}내용:${RESET}"
-          cat $CHANGESET_FILE | sed 's/^/      /'
-          echo ""
-
-          echo -e "   ⎿ ${GREEN}✓${RESET} Changeset 파일 생성 완료"
+          echo "✅ Changeset 생성 완료: $CHANGESET_FILE"
 
           echo "changeset_file=$CHANGESET_FILE" >> $GITHUB_OUTPUT
-
-          echo "::endgroup::"
 
       - name: Commit and push changeset to develop
         if: steps.check-changesets.outputs.has_changeset == 'false' && steps.detect-packages.outputs.packages != '' && steps.analyze-commits.outputs.should_skip != 'true'
         run: |
-          GREEN='\033[32m'
-          WHITE='\033[37m'
-          BLUE='\033[34m'
-          RESET='\033[0m'
-
-          echo "::group::5️⃣ Changeset 커밋 및 푸시"
+          echo "📤 Changeset 커밋 및 푸시 중..."
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          echo -e "   ⎿ Git 설정 완료"
-          echo ""
-
           git add .changeset/
-          echo -e "   ⎿ Changeset 파일 스테이징"
-
           git commit -m "chore: auto-generate changeset for PR #${{ github.event.pull_request.number }}"
-          echo -e "   ⎿ 커밋 생성 완료"
-
           git push origin develop
-          echo -e "   ⎿ ${GREEN}✓${RESET} develop 브랜치로 푸시 완료"
 
-          echo "::endgroup::"
-          echo ""
-          echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-          echo -e "${GREEN}✓ Changeset 자동 생성 완료${RESET}"
-          echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-          echo ""
+          echo "✅ Changeset 커밋 및 푸시 완료"
 
-      - name: Generate Job Summary
+      - name: Summary
         if: steps.check-changesets.outputs.has_changeset == 'false' && steps.detect-packages.outputs.packages != '' && steps.analyze-commits.outputs.should_skip != 'true'
         run: |
-          PR_NUMBER="${{ github.event.pull_request.number }}"
-          PR_TITLE="${{ github.event.pull_request.title }}"
-          PR_BRANCH="${{ github.event.pull_request.head.ref }}"
           BUMP_TYPE="${{ steps.analyze-commits.outputs.bump_type }}"
           PACKAGES="${{ steps.detect-packages.outputs.packages }}"
           CHANGESET_FILE="${{ steps.generate-changeset.outputs.changeset_file }}"
 
-          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
-          ## 🤖 Changeset 자동 생성 완료
-
-          ### 📋 실행 정보
-          | 항목 | 값 |
-          |------|-----|
-          | **PR 번호** | #${{ github.event.pull_request.number }} |
-          | **PR 제목** | ${{ github.event.pull_request.title }} |
-          | **브랜치** | `${{ github.event.pull_request.head.ref }}` |
-          | **버전 범프** | `${{ steps.analyze-commits.outputs.bump_type }}` |
-
-          ### 📦 변경된 패키지
-          EOF
-
+          echo "## Changeset 자동 생성 완료" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**버전:** \`$BUMP_TYPE\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**패키지:**" >> $GITHUB_STEP_SUMMARY
           for pkg in $PACKAGES; do
-            echo "- \`$pkg\` → $BUMP_TYPE" >> $GITHUB_STEP_SUMMARY
+            echo "- \`$pkg\`" >> $GITHUB_STEP_SUMMARY
           done
-
-          cat >> $GITHUB_STEP_SUMMARY << EOF
-
-          ### ✅ 생성된 Changeset
-          \`$CHANGESET_FILE\`
-
-          \`\`\`markdown
-          $(cat $CHANGESET_FILE)
-          \`\`\`
-
-          ### 🔗 다음 단계
-          - Release 브랜치 생성 시 자동으로 버전이 업데이트됩니다
-          - \`CHANGELOG.md\`가 자동으로 생성/업데이트됩니다
-          - Main 브랜치 머지 시 GitHub Release가 자동으로 생성됩니다
-
-          ---
-          _Generated by [Develop Changeset Automation](.github/workflows/develop-changeset-automation.yml)_
-          EOF
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**파일:** \`$CHANGESET_FILE\`" >> $GITHUB_STEP_SUMMARY

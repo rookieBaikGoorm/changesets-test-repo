@@ -8,22 +8,49 @@ on:
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
 jobs:
-  tagging:
-    name: Create Tags & Releases
+  release:
+    name: Version & Release
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Setup .npmrc for GitHub Packages
+        run: |
+          cat > ~/.npmrc << EOF
+          @goorm-dev:registry=https://npm.pkg.github.com/
+          //npm.pkg.github.com/:_authToken=${{ secrets.GDS_TOKEN }}
+          EOF
+          echo "✅ .npmrc 설정 완료 (GitHub Packages 인증)"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --prefer-offline
 
       - name: Check merge type
         id: check-merge
@@ -44,6 +71,175 @@ jobs:
             echo "is_release_or_hotfix=false" >> $GITHUB_OUTPUT
             echo "ℹ️ Release/Hotfix 병합이 아님, 스킵"
           fi
+
+      - name: Find branch divergence point
+        if: steps.check-merge.outputs.is_release_or_hotfix == 'true'
+        id: find-divergence
+        run: |
+          echo "🔍 Develop 분기점 찾기..."
+
+          # release/hotfix 브랜치가 develop에서 분기한 시점 찾기
+          MERGE_BASE=$(git merge-base develop HEAD~1)
+
+          echo "divergence_point=$MERGE_BASE" >> $GITHUB_OUTPUT
+          echo "📍 분기점: $MERGE_BASE"
+
+      - name: Analyze additional commits and create changesets
+        if: steps.check-merge.outputs.is_release_or_hotfix == 'true'
+        id: analyze-commits
+        run: |
+          echo "🔍 추가 커밋 분석 중..."
+
+          DIVERGENCE="${{ steps.find-divergence.outputs.divergence_point }}"
+          MERGE_TYPE="${{ steps.check-merge.outputs.merge_type }}"
+
+          # 분기점 이후의 모든 커밋 가져오기 (병합 커밋 제외)
+          COMMITS=$(git log --no-merges --format="%H|%s" ${DIVERGENCE}..HEAD~1)
+
+          CREATED_CHANGESETS=0
+
+          while IFS='|' read -r COMMIT_SHA COMMIT_MSG; do
+            if [ -z "$COMMIT_SHA" ]; then continue; fi
+
+            echo ""
+            echo "📝 커밋 분석: $COMMIT_MSG"
+
+            # 이미 changeset이 있는 커밋인지 확인
+            # changeset 커밋은 스킵 (chore: auto-generate changeset)
+            if echo "$COMMIT_MSG" | grep -qE "chore: auto-generate changeset"; then
+              echo "  ↳ Changeset 생성 커밋, 스킵"
+              continue
+            fi
+
+            # 해당 커밋에서 변경된 changeset 파일이 있는지 확인
+            CHANGESET_FILES=$(git diff-tree --no-commit-id --name-only -r $COMMIT_SHA | grep "^\.changeset/.*\.md$" | grep -v "README.md" || true)
+
+            if [ -n "$CHANGESET_FILES" ]; then
+              echo "  ↳ Changeset 파일 이미 존재: $CHANGESET_FILES"
+              continue
+            fi
+
+            # 버전 업데이트가 필요없는 커밋 타입 체크
+            if echo "$COMMIT_MSG" | grep -qE "^(chore|docs|style|test|ci|build)(\(.+\))?:"; then
+              echo "  ↳ 버전 업데이트 불필요한 타입, 스킵"
+              continue
+            fi
+
+            # Conventional commits 기반 버전 범프 타입 결정
+            BUMP_TYPE=""
+
+            if echo "$COMMIT_MSG" | grep -qE "^.+!:|BREAKING CHANGE"; then
+              BUMP_TYPE="major"
+              echo "  ↳ 📦 Major 버전 업데이트 (BREAKING CHANGE)"
+            elif echo "$COMMIT_MSG" | grep -qE "^feat(\(.+\))?:"; then
+              BUMP_TYPE="minor"
+              echo "  ↳ ✨ Minor 버전 업데이트 (feat)"
+            elif echo "$COMMIT_MSG" | grep -qE "^fix(\(.+\))?:"; then
+              BUMP_TYPE="patch"
+              echo "  ↳ 🐛 Patch 버전 업데이트 (fix)"
+            elif echo "$COMMIT_MSG" | grep -qE "^(refactor|perf)(\(.+\))?:"; then
+              BUMP_TYPE="patch"
+              echo "  ↳ ♻️ Patch 버전 업데이트 (refactor/perf)"
+            else
+              BUMP_TYPE="patch"
+              echo "  ↳ ⚠️ Conventional Commits 미준수 → patch"
+            fi
+
+            # 변경된 패키지 감지
+            CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r $COMMIT_SHA)
+            PACKAGES=""
+
+            while IFS= read -r pkg; do
+              if [ ! -f "$pkg" ]; then continue; fi
+
+              PKG_DIR=$(dirname "$pkg")
+              PKG_NAME=$(node -p "require('./$pkg').name" 2>/dev/null || echo "")
+
+              if [ -z "$PKG_NAME" ]; then continue; fi
+
+              if echo "$CHANGED_FILES" | grep -q "^$PKG_DIR/"; then
+                PACKAGES="$PACKAGES $PKG_NAME"
+                echo "  ↳ 패키지 감지: $PKG_NAME"
+              fi
+            done < <(find packages apps -name package.json 2>/dev/null)
+
+            # 패키지가 없으면 스킵
+            if [ -z "$PACKAGES" ]; then
+              echo "  ↳ ⚠️ 변경된 패키지 없음, 스킵"
+              continue
+            fi
+
+            # Changeset 파일 생성
+            CHANGESET_FILE=".changeset/auto-${MERGE_TYPE}-${COMMIT_SHA:0:7}.md"
+
+            echo "---" > $CHANGESET_FILE
+            for pkg in $PACKAGES; do
+              echo "\"$pkg\": $BUMP_TYPE" >> $CHANGESET_FILE
+            done
+            echo "---" >> $CHANGESET_FILE
+            echo "" >> $CHANGESET_FILE
+            echo "$COMMIT_MSG" >> $CHANGESET_FILE
+
+            echo "  ↳ ✅ Changeset 생성: $CHANGESET_FILE"
+
+            CREATED_CHANGESETS=$((CREATED_CHANGESETS + 1))
+
+          done <<< "$COMMITS"
+
+          echo ""
+          echo "✅ 추가 커밋 분석 완료: ${CREATED_CHANGESETS}개의 changeset 생성"
+          echo "created_count=$CREATED_CHANGESETS" >> $GITHUB_OUTPUT
+
+      - name: Run changeset version
+        if: steps.check-merge.outputs.is_release_or_hotfix == 'true'
+        run: |
+          echo "📦 Changeset version 실행 중..."
+
+          # Changeset이 있는지 확인
+          CHANGESET_COUNT=$(find .changeset -name "*.md" ! -name "README.md" | wc -l)
+
+          if [ "$CHANGESET_COUNT" -eq 0 ]; then
+            echo "ℹ️ Changeset 파일이 없습니다. 버전 업데이트 스킵"
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "📝 발견된 changeset: ${CHANGESET_COUNT}개"
+
+          # changeset version 실행
+          pnpm changeset version
+
+          # 변경사항 확인
+          if git diff --quiet; then
+            echo "ℹ️ 버전 변경사항 없음"
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          else
+            echo "✅ 버전 업데이트 완료"
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit version updates to main
+        if: steps.check-merge.outputs.is_release_or_hotfix == 'true'
+        id: commit-version
+        run: |
+          # 변경사항이 있는지 확인
+          if git diff --quiet; then
+            echo "ℹ️ 커밋할 변경사항 없음"
+            echo "committed=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "📤 버전 업데이트 커밋 중..."
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add .
+          git commit -m "chore(release): version packages"
+          git push origin main
+
+          echo "✅ 버전 업데이트 커밋 완료"
+          echo "committed=true" >> $GITHUB_OUTPUT
 
       - name: Create tags and GitHub Releases
         if: steps.check-merge.outputs.is_release_or_hotfix == 'true'
@@ -131,3 +327,25 @@ jobs:
           done
 
           echo "✅ 모든 릴리즈 배포 완료"
+
+      - name: Summary
+        if: steps.check-merge.outputs.is_release_or_hotfix == 'true'
+        run: |
+          MERGE_TYPE="${{ steps.check-merge.outputs.merge_type }}"
+          CREATED_CHANGESETS="${{ steps.analyze-commits.outputs.created_count }}"
+
+          echo "## 🎉 Release 자동화 완료" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**타입:** \`$MERGE_TYPE\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$CREATED_CHANGESETS" -gt 0 ]; then
+            echo "**생성된 Changeset:** ${CREATED_CHANGESETS}개" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "**수행된 작업:**" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ 추가 커밋 분석 및 changeset 생성" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ 버전 업데이트 및 CHANGELOG 생성" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Main 브랜치에 자동 커밋" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Git 태그 및 GitHub Release 생성" >> $GITHUB_STEP_SUMMARY
