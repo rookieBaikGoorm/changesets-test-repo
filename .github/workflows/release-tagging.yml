@@ -79,7 +79,7 @@ jobs:
           echo "🔍 Develop 분기점 찾기..."
 
           # release/hotfix 브랜치가 develop에서 분기한 시점 찾기
-          MERGE_BASE=$(git merge-base develop HEAD~1)
+          MERGE_BASE=$(git merge-base origin/develop HEAD~1)
 
           echo "divergence_point=$MERGE_BASE" >> $GITHUB_OUTPUT
           echo "📍 분기점: $MERGE_BASE"
